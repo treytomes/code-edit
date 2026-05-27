@@ -122,11 +122,20 @@ app.RequestStop();     // stop (replaces old Shutdown)
 ```
 `Application.Init()` / `Application.Run()` / `Application.Shutdown()` still compile but are marked `[Obsolete]`.
 
+### Drawing API (inside `OnDrawingContent(DrawContext?)`)
+- Override `OnDrawingContent(DrawContext?)` — NOT `Redraw` or `OnDrawContent`
+- `SetAttribute(attr)` — set current color (inherited `View` method)
+- `AddStr(col, row, str)` — write string at viewport-relative coordinates (inherited `View` method)
+- `SetNeedsDraw()` — request a redraw (NOT `SetNeedsDisplay()` — that name does not exist in v2)
+- `Viewport.Width` / `Viewport.Height` — visible dimensions inside the view
+
 ### Other rules
 - All UI must run on the main thread; background work dispatches via `Application.Invoke`
-- Prefer `Dim.Fill()` and `Pos.Relative()` over hardcoded positions
+- Prefer `Dim.Fill()` and `Pos.AnchorEnd()` / `Pos.Bottom()` over hardcoded positions
+- `Dim.Fill() - Dim.Absolute(n)` subtracts a fixed margin from Fill
 - `View.Draw()` is called by the framework — do not call it manually
 - Use `IColorTheme` → `ColorPairMapper` for colors; never hardcode `Attribute` values in views
+- Key handling: override `OnKeyDown(Key key)` (protected); use `key.TryGetPrintableRune(out Rune)` for printable chars; `key.KeyCode` for named keys (e.g. `KeyCode.CursorUp`, `KeyCode.Backspace`, `KeyCode.Enter`, `KeyCode.Delete`)
 
 ## Spec Document Format
 
