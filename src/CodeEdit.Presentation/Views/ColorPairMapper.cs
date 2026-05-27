@@ -7,5 +7,5 @@ namespace CodeEdit.Presentation.Views;
 public static class ColorPairMapper
 {
     public static Terminal.Gui.Drawing.Attribute ToAttribute(ColorPair pair)
-        => new((Color)pair.Foreground, (Color)pair.Background);
+        => new((ColorName16)pair.Foreground, (ColorName16)pair.Background);
 }

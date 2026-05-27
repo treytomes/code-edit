@@ -135,6 +135,7 @@ public sealed class EditorView : View
         {
             var newPos = MoveUp(pos, _wantColumn, buffer);
             _eventBus.Publish(new SetCursorEvent(newPos, pos));
+            key.Handled = true;
             return true;
         }
 
@@ -142,6 +143,7 @@ public sealed class EditorView : View
         {
             var newPos = MoveDown(pos, _wantColumn, buffer);
             _eventBus.Publish(new SetCursorEvent(newPos, pos));
+            key.Handled = true;
             return true;
         }
 
@@ -150,6 +152,7 @@ public sealed class EditorView : View
             var newPos = MoveLeft(pos, buffer);
             _wantColumn = newPos.Column;
             _eventBus.Publish(new SetCursorEvent(newPos, pos));
+            key.Handled = true;
             return true;
         }
 
@@ -158,6 +161,7 @@ public sealed class EditorView : View
             var newPos = MoveRight(pos, buffer);
             _wantColumn = newPos.Column;
             _eventBus.Publish(new SetCursorEvent(newPos, pos));
+            key.Handled = true;
             return true;
         }
 
@@ -165,16 +169,18 @@ public sealed class EditorView : View
         {
             _wantColumn = 0;
             _eventBus.Publish(new InsertTextEvent(pos, "\n"));
+            key.Handled = true;
             return true;
         }
 
         if (key.KeyCode == KeyCode.Backspace)
         {
-            if (pos.Line == 0 && pos.Column == 0) return true;
+            if (pos.Line == 0 && pos.Column == 0) { key.Handled = true; return true; }
 
             var (range, text) = BackspaceRange(pos, buffer);
             _wantColumn = range.Start.Column;
             _eventBus.Publish(new DeleteEvent(range, text));
+            key.Handled = true;
             return true;
         }
 
@@ -186,6 +192,7 @@ public sealed class EditorView : View
                 _wantColumn = pos.Column;
                 _eventBus.Publish(new DeleteEvent(del.Value.range, del.Value.text));
             }
+            key.Handled = true;
             return true;
         }
 
@@ -194,6 +201,7 @@ public sealed class EditorView : View
             var ch = rune.ToString();
             _wantColumn = pos.Column + ch.Length;
             _eventBus.Publish(new InsertTextEvent(pos, ch));
+            key.Handled = true;
             return true;
         }
 

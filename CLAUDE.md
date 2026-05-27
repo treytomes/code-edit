@@ -135,7 +135,8 @@ app.RequestStop();     // stop (replaces old Shutdown)
 - `Dim.Fill() - Dim.Absolute(n)` subtracts a fixed margin from Fill
 - `View.Draw()` is called by the framework — do not call it manually
 - Use `IColorTheme` → `ColorPairMapper` for colors; never hardcode `Attribute` values in views
-- Key handling: override `OnKeyDown(Key key)` (protected); use `key.TryGetPrintableRune(out Rune)` for printable chars; `key.KeyCode` for named keys (e.g. `KeyCode.CursorUp`, `KeyCode.Backspace`, `KeyCode.Enter`, `KeyCode.Delete`)
+- `ColorPairMapper` must cast `ColorPair.Foreground/Background` (int 0–15) to `ColorName16`, NOT to `Color` directly — `(Color)int` treats the int as RGBA hex and produces near-black
+- Key handling: override `OnKeyDown(Key key)` (protected); use `key.TryGetPrintableRune(out Rune)` for printable chars; `key.KeyCode` for named keys (e.g. `KeyCode.CursorUp`, `KeyCode.Backspace`, `KeyCode.Enter`, `KeyCode.Delete`); always set `key.Handled = true` when consuming a key to prevent the Window from re-processing it
 
 ## Spec Document Format
 
