@@ -1,0 +1,25 @@
+# .NET build output
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.idea/
+
+# NuGet
+*.nupkg
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Test results
+TestResults/
+coverage/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime logs
+logs/
+*.log
