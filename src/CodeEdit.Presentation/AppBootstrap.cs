@@ -90,6 +90,26 @@ public static class AppBootstrap
                 editorView.SetBuffer(newBuf);
             }
 
+            void DoNew()
+            {
+                if (eventBus.Buffer.IsDirty)
+                {
+                    var choice = MessageBox.Query(app, "Unsaved Changes", "You have unsaved changes.\nCreate a new file anyway?", "Yes", "No");
+                    if (choice != 0) return;
+                }
+                SetActiveBuffer(new EmptyBuffer());
+            }
+
+            void DoQuit()
+            {
+                if (eventBus.Buffer.IsDirty)
+                {
+                    var choice = MessageBox.Query(app, "Unsaved Changes", "You have unsaved changes.\nQuit anyway?", "Yes", "No");
+                    if (choice != 0) return;
+                }
+                app.RequestStop();
+            }
+
             void DoOpen()
             {
                 if (eventBus.Buffer.IsDirty)
@@ -172,6 +192,7 @@ public static class AppBootstrap
                 eventBus.Publish(new PasteEvent(eventBus.Buffer, clipboardSvc));
             }
 
+            editorView.NewRequested  += (_, _) => DoNew();
             editorView.OpenRequested += (_, _) => DoOpen();
             editorView.SaveRequested += (_, _) => DoSave();
 
@@ -187,11 +208,12 @@ public static class AppBootstrap
             [
                 new MenuBarItem("_File",
                 [
+                    new MenuItem("_New",      "Ctrl+N", DoNew),
                     new MenuItem("_Open",     "Ctrl+O", DoOpen),
                     new MenuItem("_Save",     "Ctrl+S", DoSave),
                     new MenuItem("Save _As…", "",       DoSaveAs),
                     null!,
-                    new MenuItem("_Quit", "", () => app.RequestStop()),
+                    new MenuItem("_Quit", "", DoQuit),
                 ]),
                 new MenuBarItem("_Edit",
                 [

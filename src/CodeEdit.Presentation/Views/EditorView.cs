@@ -43,6 +43,7 @@ public sealed class EditorView : View
     public bool WordWrap => _wordWrap;
 
     public event EventHandler? WordWrapChanged;
+    public event EventHandler? NewRequested;
     public event EventHandler? OpenRequested;
     public event EventHandler? SaveRequested;
 
@@ -272,7 +273,9 @@ public sealed class EditorView : View
             return true;
         }
 
-        if (mouse.Flags.HasFlag(MouseFlags.LeftButtonPressed) && mouse.Position.HasValue)
+        if (mouse.Flags.HasFlag(MouseFlags.LeftButtonPressed)
+            && !mouse.Flags.HasFlag(MouseFlags.PositionReport)
+            && mouse.Position.HasValue)
         {
             var pos = ScreenToBuffer(mouse.Position.Value, buffer);
             _dragAnchor = pos;
@@ -285,7 +288,9 @@ public sealed class EditorView : View
             return true;
         }
 
-        if (_dragAnchor.HasValue && mouse.Flags.HasFlag(MouseFlags.PositionReport) && mouse.Position.HasValue)
+        if (_dragAnchor.HasValue
+            && mouse.Flags.HasFlag(MouseFlags.LeftButtonPressed | MouseFlags.PositionReport)
+            && mouse.Position.HasValue)
         {
             var active = ScreenToBuffer(mouse.Position.Value, buffer);
             if (active != _dragAnchor.Value)
@@ -329,6 +334,13 @@ public sealed class EditorView : View
         }
 
         // ── File shortcuts ─────────────────────────────────────────────────
+
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.N))
+        {
+            NewRequested?.Invoke(this, EventArgs.Empty);
+            key.Handled = true;
+            return true;
+        }
 
         if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.O))
         {

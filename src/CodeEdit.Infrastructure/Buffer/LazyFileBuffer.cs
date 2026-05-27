@@ -94,6 +94,10 @@ public sealed class LazyFileBuffer : IMutableTextBuffer, IDisposable
         for (var i = 1; i < segments.Length; i++)
             _logicalLines.Insert(at.Line + i, new LogicalLine(-1, true, segments[i]));
 
+        // Invalidate cache entries for all lines that shifted up (same pattern as DeleteRange)
+        for (var i = at.Line + segments.Length; i < _logicalLines.Count; i++)
+            _lineCache.Invalidate(i);
+
         _hasStructuralEdits = true;
     }
 
