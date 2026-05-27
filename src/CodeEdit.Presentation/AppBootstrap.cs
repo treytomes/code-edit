@@ -48,7 +48,7 @@ public static class AppBootstrap
             .CreateLogger("CodeEdit.Presentation.AppBootstrap");
         logger.LogInformation("code-edit starting");
 
-        var app = TGuiApp.Create();
+        using var app = TGuiApp.Create();
         app.Init();
 
         try
@@ -56,16 +56,12 @@ public static class AppBootstrap
             // Main window layout wired per the UI layout spec.
             using var window = new Window { Title = "code-edit" };
             app.Run(window);
+            logger.LogInformation("code-edit stopped");
         }
         catch (Exception ex)
         {
             logger.LogCritical(ex, "Unhandled exception — exiting");
             throw;
-        }
-        finally
-        {
-            logger.LogInformation("code-edit stopped");
-            app.RequestStop();
         }
     }
 }
