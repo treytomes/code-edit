@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\CodeEdit.Domain\CodeEdit.Domain.csproj" />
     <ProjectReference Include="..\..\src\CodeEdit.Application\CodeEdit.Application.csproj" />
+    <ProjectReference Include="..\..\src\CodeEdit.Infrastructure\CodeEdit.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
