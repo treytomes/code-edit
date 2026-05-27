@@ -153,6 +153,21 @@ public sealed class EventBusTests
     }
 
     [Fact]
+    public void Coalescing_BothCharsWrittenToBuffer()
+    {
+        // Regression: coalesce path was skipping Execute on the second event,
+        // causing every other typed character to be silently dropped.
+        var bus = CreateBus();
+        var buf = new EmptyBuffer();
+        bus.SetBuffer(buf);
+
+        bus.Publish(new InsertTextEvent(new CursorPosition(0, 0), "h"));
+        bus.Publish(new InsertTextEvent(new CursorPosition(0, 1), "i"));
+
+        Assert.Equal("hi", buf.GetLine(0));
+    }
+
+    [Fact]
     public void Coalescing_NonAdjacentInsertions_SeparateUndoSteps()
     {
         var bus = BusWithBuffer(out _);

@@ -33,6 +33,8 @@ public sealed class EventBus(ILogger<EventBus> logger) : IEventBus
 
         _logger.LogDebug("Publish {EventType}: {Description}", bufferEvent.GetType().Name, bufferEvent.ToString());
 
+        bufferEvent.Execute(buf);
+
         if (_undoStack.Count > 0)
         {
             var top = _undoStack.Peek();
@@ -40,12 +42,12 @@ public sealed class EventBus(ILogger<EventBus> logger) : IEventBus
             {
                 _undoStack.Pop();
                 _undoStack.Push(merged);
+                _redoStack.Clear();
                 EventExecuted?.Invoke(this, new BufferEventArgs(merged));
                 return;
             }
         }
 
-        bufferEvent.Execute(buf);
         _undoStack.Push(bufferEvent);
         _redoStack.Clear();
         EventExecuted?.Invoke(this, new BufferEventArgs(bufferEvent));

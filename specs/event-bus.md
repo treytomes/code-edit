@@ -48,15 +48,15 @@ public sealed class EventBus(
 #### Publish flow
 
 ```
-1. If _undoStack is non-empty:
+1. incoming.Execute(_buffer)
+2. If _undoStack is non-empty:
        top = _undoStack.Peek()
        if top.TryCoalesce(incoming, out merged):
            _undoStack.Pop()
            _undoStack.Push(merged)
-           // merged already reflects full state; no Execute needed
+           _redoStack.Clear()
            fire EventExecuted(merged)
            return
-2. incoming.Execute(_buffer)
 3. _undoStack.Push(incoming)
 4. _redoStack.Clear()
 5. fire EventExecuted(incoming)
@@ -283,7 +283,7 @@ public sealed class SetSelectionEvent(Selection? selection, CursorPosition curso
 
 ### Coalescing and the undo stack invariant
 
-The undo stack always contains the minimal set of events needed to restore the prior state. After `TryCoalesce` succeeds, the top of the stack is replaced with `merged` — `merged.Execute` is NOT called again (the buffer is already in the correct state from the two original executes). This is the invariant: **the buffer state and the undo stack are always consistent**.
+The undo stack always contains the minimal set of events needed to restore the prior state. After `TryCoalesce` succeeds, the top of the stack is replaced with `merged`. Both events have already been individually executed on the buffer, so `merged.Execute` is NOT called again. The invariant: **the buffer state and the undo stack are always consistent**.
 
 When `TryCoalesce` returns true, the merged event must represent the combined state such that calling `merged.Undo` from the post-second-execute state correctly restores the pre-first-execute state.
 
