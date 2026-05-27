@@ -43,6 +43,8 @@ public sealed class EditorView : View
     public bool WordWrap => _wordWrap;
 
     public event EventHandler? WordWrapChanged;
+    public event EventHandler? OpenRequested;
+    public event EventHandler? SaveRequested;
 
     public EditorView(
         IEventBus         eventBus,
@@ -322,6 +324,22 @@ public sealed class EditorView : View
         if (key.KeyCode == (KeyCode.AltMask | KeyCode.Z))
         {
             ToggleWordWrap();
+            key.Handled = true;
+            return true;
+        }
+
+        // ── File shortcuts ─────────────────────────────────────────────────
+
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.O))
+        {
+            OpenRequested?.Invoke(this, EventArgs.Empty);
+            key.Handled = true;
+            return true;
+        }
+
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.S))
+        {
+            SaveRequested?.Invoke(this, EventArgs.Empty);
             key.Handled = true;
             return true;
         }

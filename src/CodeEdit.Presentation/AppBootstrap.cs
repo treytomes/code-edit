@@ -61,16 +61,16 @@ public static class AppBootstrap
 
         try
         {
-            var editorView = provider.GetRequiredService<EditorView>();
-            var statusBar  = provider.GetRequiredService<StatusBarView>();
-            var eventBus   = provider.GetRequiredService<IEventBus>();
+            var editorView  = provider.GetRequiredService<EditorView>();
+            var statusBar   = provider.GetRequiredService<StatusBarView>();
+            var eventBus    = provider.GetRequiredService<IEventBus>();
+            var fileService = provider.GetRequiredService<IFileService>();
 
             // Open file from command line or start with an empty buffer
             IMutableTextBuffer buffer;
             var cmdArgs = Environment.GetCommandLineArgs();
             if (cmdArgs.Length > 1 && !string.IsNullOrWhiteSpace(cmdArgs[1]))
             {
-                var fileService = provider.GetRequiredService<IFileService>();
                 buffer = (IMutableTextBuffer)fileService.Open(cmdArgs[1]);
                 logger.LogInformation("Opened file: {Path}", cmdArgs[1]);
             }
@@ -81,6 +81,78 @@ public static class AppBootstrap
 
             eventBus.SetBuffer(buffer);
             editorView.SetBuffer(buffer);
+
+            // ── File helpers ───────────────────────────────────────────────
+
+            void SetActiveBuffer(IMutableTextBuffer newBuf)
+            {
+                eventBus.SetBuffer(newBuf);
+                editorView.SetBuffer(newBuf);
+            }
+
+            void DoOpen()
+            {
+                if (eventBus.Buffer.IsDirty)
+                {
+                    var choice = MessageBox.Query(app, "Unsaved Changes", "You have unsaved changes.\nOpen a new file anyway?", "Yes", "No");
+                    if (choice != 0) return;
+                }
+
+                var dlg = new OpenDialog { MustExist = true };
+                app.Run(dlg);
+
+                if (dlg.Canceled || dlg.FilePaths.Count == 0) return;
+
+                var path = dlg.FilePaths[0].ToString()!;
+                try
+                {
+                    SetActiveBuffer((IMutableTextBuffer)fileService.Open(path));
+                }
+                catch (FileServiceException ex)
+                {
+                    statusBar.SetMessage(ex.Message);
+                }
+            }
+
+            void DoSave()
+            {
+                var buf = eventBus.Buffer;
+                if (buf.FilePath is null)
+                {
+                    DoSaveAs();
+                    return;
+                }
+                try
+                {
+                    fileService.Save(buf);
+                    statusBar.SetNeedsDraw();
+                    editorView.SetNeedsDraw();
+                }
+                catch (FileServiceException ex)
+                {
+                    statusBar.SetMessage(ex.Message);
+                }
+            }
+
+            void DoSaveAs()
+            {
+                var dlg = new SaveDialog();
+                app.Run(dlg);
+
+                if (dlg.FileName is null) return;
+
+                var path = dlg.FileName.ToString()!;
+                try
+                {
+                    SetActiveBuffer((IMutableTextBuffer)fileService.SaveAs(eventBus.Buffer, path));
+                }
+                catch (FileServiceException ex)
+                {
+                    statusBar.SetMessage(ex.Message);
+                }
+            }
+
+            // ── Clipboard helpers ──────────────────────────────────────────
 
             var clipboardSvc = provider.GetRequiredService<IClipboardService>();
 
@@ -100,17 +172,25 @@ public static class AppBootstrap
                 eventBus.Publish(new PasteEvent(eventBus.Buffer, clipboardSvc));
             }
 
+            editorView.OpenRequested += (_, _) => DoOpen();
+            editorView.SaveRequested += (_, _) => DoSave();
+
+            // ── View menu ──────────────────────────────────────────────────
+
             var wrapItem = new MenuItem("  _Word Wrap", "Alt+Z", () => editorView.ToggleWordWrap());
             editorView.WordWrapChanged += (_, _) =>
                 wrapItem.Title = (editorView.WordWrap ? "✓ " : "  ") + "_Word Wrap";
 
-            // Build menu bar
+            // ── Menu bar ───────────────────────────────────────────────────
+
             var menuBar = new MenuBar(
             [
                 new MenuBarItem("_File",
                 [
-                    new MenuItem("_Open", "", null),
-                    new MenuItem("_Save", "", null),
+                    new MenuItem("_Open",     "Ctrl+O", DoOpen),
+                    new MenuItem("_Save",     "Ctrl+S", DoSave),
+                    new MenuItem("Save _As…", "",       DoSaveAs),
+                    null!,
                     new MenuItem("_Quit", "", () => app.RequestStop()),
                 ]),
                 new MenuBarItem("_Edit",
@@ -125,7 +205,8 @@ public static class AppBootstrap
                 ]),
             ]);
 
-            // Layout
+            // ── Layout ─────────────────────────────────────────────────────
+
             editorView.X      = 0;
             editorView.Y      = Pos.Bottom(menuBar);
             editorView.Width  = Dim.Fill();
