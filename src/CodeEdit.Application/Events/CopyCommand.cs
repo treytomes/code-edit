@@ -11,7 +11,7 @@ public static class CopyCommand
         return clipboard.TrySet(SelectedText(buffer));
     }
 
-    internal static string SelectedText(ITextBuffer buffer)
+    public static string SelectedText(ITextBuffer buffer)
     {
         var sel   = buffer.Selection!.Value;
         var (start, end) = Normalise(sel);
@@ -34,7 +34,7 @@ public static class CopyCommand
     internal static string CurrentLine(ITextBuffer buffer) =>
         buffer.GetLine(buffer.Cursor.Line) + "\n";
 
-    internal static (CursorPosition start, CursorPosition end) Normalise(Selection sel)
+    public static (CursorPosition start, CursorPosition end) Normalise(Selection sel)
     {
         var a = sel.Anchor;
         var b = sel.Active;

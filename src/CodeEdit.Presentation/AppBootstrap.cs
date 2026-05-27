@@ -1,4 +1,5 @@
 using CodeEdit.Application;
+using CodeEdit.Application.Events;
 using CodeEdit.Application.Ports;
 using CodeEdit.Domain;
 using CodeEdit.Infrastructure.Buffer;
@@ -52,9 +53,9 @@ public static class AppBootstrap
         using var app = TGuiApp.Create();
         app.Init();
 
-        // Clipboard requires IApplication (available after Init) — register after Init
-        var clipboardService = new TGuiClipboardService(app);
-        services.AddSingleton<IClipboardService>(clipboardService);
+        // EditorView requires IApplication (available after Init) — register after Init
+        services.AddSingleton<IClipboardService>(new NativeClipboardService());
+        services.AddSingleton<Terminal.Gui.App.IApplication>(app);
         services.AddSingleton<EditorView>();
         provider = services.BuildServiceProvider();
 
@@ -81,6 +82,28 @@ public static class AppBootstrap
             eventBus.SetBuffer(buffer);
             editorView.SetBuffer(buffer);
 
+            var clipboardSvc = provider.GetRequiredService<IClipboardService>();
+
+            void DoCopy()
+            {
+                if (!clipboardSvc.IsSupported) { statusBar.SetMessage("Clipboard not available"); return; }
+                if (!CopyCommand.Execute(eventBus.Buffer, clipboardSvc)) statusBar.SetMessage("No text selected");
+            }
+            void DoCut()
+            {
+                if (!clipboardSvc.IsSupported) { statusBar.SetMessage("Clipboard not available"); return; }
+                eventBus.Publish(new CutEvent(eventBus.Buffer, clipboardSvc));
+            }
+            void DoPaste()
+            {
+                if (!clipboardSvc.IsSupported) { statusBar.SetMessage("Clipboard not available"); return; }
+                eventBus.Publish(new PasteEvent(eventBus.Buffer, clipboardSvc));
+            }
+
+            var wrapItem = new MenuItem("  _Word Wrap", "Alt+Z", () => editorView.ToggleWordWrap());
+            editorView.WordWrapChanged += (_, _) =>
+                wrapItem.Title = (editorView.WordWrap ? "✓ " : "  ") + "_Word Wrap";
+
             // Build menu bar
             var menuBar = new MenuBar(
             [
@@ -89,7 +112,17 @@ public static class AppBootstrap
                     new MenuItem("_Open", "", null),
                     new MenuItem("_Save", "", null),
                     new MenuItem("_Quit", "", () => app.RequestStop()),
-                ])
+                ]),
+                new MenuBarItem("_Edit",
+                [
+                    new MenuItem("Cu_t",   "Ctrl+X", DoCut),
+                    new MenuItem("_Copy",  "Ctrl+C", DoCopy),
+                    new MenuItem("_Paste", "Ctrl+V", DoPaste),
+                ]),
+                new MenuBarItem("_View",
+                [
+                    wrapItem,
+                ]),
             ]);
 
             // Layout

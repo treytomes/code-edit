@@ -322,7 +322,7 @@ public sealed class EventBusTests
         var buf = new FakeBuffer();
         buf.Lines.Add("hello");
         var sel = new Selection(new CursorPosition(0, 0), new CursorPosition(0, 5));
-        var ev = new SetSelectionEvent(sel, new CursorPosition(0, 5));
+        var ev = new SetSelectionEvent(sel, new CursorPosition(0, 5), null, new CursorPosition(0, 0));
         ev.Execute(buf);
 
         Assert.Equal(sel, buf.Selection);
@@ -335,7 +335,7 @@ public sealed class EventBusTests
         var buf = new FakeBuffer();
         buf.Lines.Add("hello");
         var sel = new Selection(new CursorPosition(0, 0), new CursorPosition(0, 5));
-        var ev = new SetSelectionEvent(sel, new CursorPosition(0, 5));
+        var ev = new SetSelectionEvent(sel, new CursorPosition(0, 5), null, new CursorPosition(0, 0));
         ev.Execute(buf);
         ev.Undo(buf);
 

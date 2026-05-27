@@ -2,13 +2,31 @@ using CodeEdit.Domain;
 
 namespace CodeEdit.Application.Events;
 
-public sealed class InsertTextEvent(CursorPosition at, string text) : IBufferEvent
+public sealed class InsertTextEvent : IBufferEvent
 {
-    public CursorPosition At   { get; }          = at;
-    public string         Text { get; private set; } = text;
+    public CursorPosition At           { get; }
+    public string         Text         { get; private set; }
+
+    // Non-null when a selection was deleted before the insert (typing over selection)
+    private readonly TextRange?  _replacedRange;
+    private readonly string?     _replacedText;
+
+    public InsertTextEvent(CursorPosition at, string text,
+                           TextRange? replacedRange = null, string? replacedText = null)
+    {
+        At             = at;
+        Text           = text;
+        _replacedRange = replacedRange;
+        _replacedText  = replacedText;
+    }
 
     public void Execute(IMutableTextBuffer buffer)
     {
+        if (_replacedRange.HasValue)
+        {
+            buffer.DeleteRange(_replacedRange.Value);
+            buffer.SetSelection(null);
+        }
         buffer.InsertText(At, Text);
         buffer.SetCursor(EndPosition(At, Text));
         buffer.SetSelection(null);
@@ -18,14 +36,26 @@ public sealed class InsertTextEvent(CursorPosition at, string text) : IBufferEve
     {
         var end = EndPosition(At, Text);
         buffer.DeleteRange(new TextRange(At, end));
-        buffer.SetCursor(At);
+
+        if (_replacedRange.HasValue && _replacedText is not null)
+        {
+            buffer.InsertText(_replacedRange.Value.Start, _replacedText);
+            buffer.SetCursor(_replacedRange.Value.End);
+        }
+        else
+        {
+            buffer.SetCursor(At);
+        }
         buffer.SetSelection(null);
     }
 
     public bool TryCoalesce(IBufferEvent next, out IBufferEvent merged)
     {
         merged = null!;
+        // Never coalesce if this event replaced a selection
+        if (_replacedRange.HasValue) return false;
         if (next is not InsertTextEvent other) return false;
+        if (other._replacedRange.HasValue) return false;
 
         var thisEnd = EndPosition(At, Text);
         if (other.At != thisEnd) return false;
