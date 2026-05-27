@@ -53,6 +53,9 @@ public static class AppBootstrap
         using var app = TGuiApp.Create();
         app.Init();
 
+        // Escape closes dialogs in Terminal.Gui by default — remove so it doesn't kill the editor
+        TGuiApp.RemoveDefaultKeyBinding(Terminal.Gui.Input.Command.Quit);
+
         // EditorView requires IApplication (available after Init) — register after Init
         services.AddSingleton<IClipboardService>(new NativeClipboardService());
         services.AddSingleton<Terminal.Gui.App.IApplication>(app);
