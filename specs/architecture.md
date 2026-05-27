@@ -40,14 +40,15 @@ code-edit is a TUI code editor built on Terminal.Gui v2, following Clean Archite
 
 ```
 code-edit/
+├── CodeEdit.sln                   # Solution file at repo root
 ├── specs/
 ├── src/
-│   ├── CodeEdit.sln
-│   ├── CodeEdit.Domain/          # Entities, value objects, core interfaces
-│   ├── CodeEdit.Application/     # Use cases, event bus, ports (interfaces for infrastructure)
-│   ├── CodeEdit.Infrastructure/  # File buffer, syntax providers, theme, file I/O, logging sink
-│   ├── CodeEdit.Presentation/    # Terminal.Gui views, menu, status bar, App.cs
-│   └── CodeEdit.Tests/           # xUnit — tests Domain and Application only
+│   ├── CodeEdit.Domain/           # Entities, value objects, core interfaces
+│   ├── CodeEdit.Application/      # Use cases, event bus, ports (interfaces for infrastructure)
+│   ├── CodeEdit.Infrastructure/   # File buffer, syntax providers, theme, file I/O, logging sink
+│   └── CodeEdit.Presentation/     # Terminal.Gui views, menu, status bar, App.cs
+├── tests/
+│   └── CodeEdit.Tests/            # xUnit — tests Domain and Application only
 └── CLAUDE.md
 ```
 
@@ -549,6 +550,30 @@ When the architecture is correctly realized:
 7. `Terminal.Gui` references in `CodeEdit.Presentation` appear only in `ColorPairMapper`, views, and `AppBootstrap`
 8. Log file is created at `~/.code-edit/logs/` on first run; no log output appears on the terminal
 9. The application launches, displays the layout above, and accepts keystrokes
+
+## Implementation Notes
+
+### Terminal.Gui v2 namespace layout
+Discovered during scaffolding — v2 uses sub-namespaces, not flat `Terminal.Gui`:
+
+| Type | Namespace |
+|---|---|
+| `Application` | `Terminal.Gui.App` |
+| `IApplication`, `IRunnable` | `Terminal.Gui.App` |
+| `View` | `Terminal.Gui.ViewBase` |
+| `Window`, `Dialog`, `ListView`, etc. | `Terminal.Gui.Views` |
+| `Attribute`, `Color` | `Terminal.Gui.Drawing` |
+
+`CodeEdit.Application` and `Terminal.Gui.App.Application` collide when both are in scope.
+Use `using TGuiApp = Terminal.Gui.App.Application;` in any file that needs both.
+
+### Terminal.Gui v2 application lifecycle
+The old static `Application.Init/Run/Shutdown` is marked `[Obsolete]`. The correct v2 pattern:
+```csharp
+var app = TGuiApp.Create();
+app.Init();
+app.Run(window);     // blocks; stop with app.RequestStop()
+```
 
 ## Open Questions
 

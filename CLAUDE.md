@@ -28,19 +28,34 @@ Never implement ahead of a spec. Never gold-plate beyond the spec scope.
 
 ```
 code-edit/
-├── specs/                  # Feature spec documents (written before implementation)
+├── CodeEdit.sln                        # Solution file at repo root
+├── specs/                              # Feature spec documents (written before implementation)
 ├── src/
-│   ├── CodeEdit/           # Main application project
-│   │   ├── Editor/         # Buffer, cursor, selection logic
-│   │   ├── Syntax/         # Syntax highlighting engine
-│   │   ├── UI/             # Terminal.Gui views and layout
-│   │   ├── Commands/       # Command pattern — actions, keybindings, menu wiring
-│   │   └── App.cs          # Entry point / application bootstrap
-│   └── CodeEdit.Tests/     # xUnit test project
+│   ├── CodeEdit.Domain/                # Entities, value objects, core interfaces
+│   ├── CodeEdit.Application/           # Use cases, event bus, ports
+│   │   └── Ports/                      # Interfaces implemented by Infrastructure
+│   ├── CodeEdit.Infrastructure/        # File buffer, syntax, theme, logging
+│   │   ├── Buffer/
+│   │   ├── Logging/
+│   │   ├── Syntax/
+│   │   └── Theme/
+│   └── CodeEdit.Presentation/          # Terminal.Gui views, bootstrap
+│       └── Views/
+├── tests/
+│   └── CodeEdit.Tests/                 # xUnit — tests Domain and Application only
 ├── .claude/
-│   ├── agents/             # Sub-agent specs
+│   ├── agents/                         # Sub-agent specs
 │   └── settings.local.json
 └── CLAUDE.md
+```
+
+## Build & Test
+
+```bash
+# From repo root — always
+dotnet build CodeEdit.sln
+dotnet run --project src/CodeEdit.Presentation
+dotnet test CodeEdit.sln
 ```
 
 ## Milestones
@@ -61,19 +76,6 @@ code-edit/
 
 ### v4
 - [ ] Git gutter / integration
-
-## Build & Test
-
-```bash
-# Build
-dotnet build src/CodeEdit.sln
-
-# Run
-dotnet run --project src/CodeEdit
-
-# Test
-dotnet test src/CodeEdit.Tests
-```
 
 ## Architecture Invariants
 
@@ -98,10 +100,33 @@ These are enforced at review time (grep checks in CI):
 
 ## Terminal.Gui v2 Notes
 
+### Namespaces (v2 uses sub-namespaces — not flat `Terminal.Gui`)
+| Type | Namespace |
+|---|---|
+| `Application` | `Terminal.Gui.App` |
+| `IApplication`, `IRunnable` | `Terminal.Gui.App` |
+| `View` | `Terminal.Gui.ViewBase` |
+| `Window`, `Dialog`, `ListView`, etc. | `Terminal.Gui.Views` |
+| `Attribute`, `Color` | `Terminal.Gui.Drawing` |
+
+### Naming conflict
+`CodeEdit.Application` and `Terminal.Gui.App.Application` collide when both are in scope.
+Always alias: `using TGuiApp = Terminal.Gui.App.Application;`
+
+### Application lifecycle (v2 instance-based — old static API is obsolete)
+```csharp
+var app = TGuiApp.Create();
+app.Init();
+app.Run(window);       // blocks until RequestStop
+app.RequestStop();     // stop (replaces old Shutdown)
+```
+`Application.Init()` / `Application.Run()` / `Application.Shutdown()` still compile but are marked `[Obsolete]`.
+
+### Other rules
 - All UI must run on the main thread; background work dispatches via `Application.Invoke`
 - Prefer `Dim.Fill()` and `Pos.Relative()` over hardcoded positions
 - `View.Draw()` is called by the framework — do not call it manually
-- Use `ColorScheme` for theming; never hardcode `Attribute` values in views
+- Use `IColorTheme` → `ColorPairMapper` for colors; never hardcode `Attribute` values in views
 
 ## Spec Document Format
 
