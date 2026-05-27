@@ -136,9 +136,20 @@ interface ITextBuffer
 
 interface IBufferEvent
 {
-    void Execute(ITextBuffer buffer);
-    void Undo(ITextBuffer buffer);
+    void Execute(IMutableTextBuffer buffer);
+    void Undo(IMutableTextBuffer buffer);
     bool TryCoalesce(IBufferEvent next, out IBufferEvent merged);
+}
+
+// IMutableTextBuffer extends ITextBuffer with the write surface.
+// IEventBus holds IMutableTextBuffer; all read-only consumers receive ITextBuffer.
+interface IMutableTextBuffer : ITextBuffer
+{
+    void InsertText(CursorPosition at, string text);
+    void DeleteRange(TextRange range);
+    void SetCursor(CursorPosition pos);
+    void SetSelection(Selection? selection);
+    void ResizeCache(int terminalHeight);
 }
 
 // Abstract color pair — no Terminal.Gui reference
