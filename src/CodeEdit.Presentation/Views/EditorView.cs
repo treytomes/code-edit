@@ -76,27 +76,47 @@ public sealed class EditorView : View
             SetAttribute(lineNumAttr);
             AddStr(0, r, gutterText);
 
-            // Text area
+            // Text area — accumulate runs of same-attribute chars, flush per run
             const int gutterWidth = 5;
-            for (var col = 0; col < lineText.Length; col++)
-            {
-                var screenCol = gutterWidth + col;
-                if (screenCol >= width) break;
+            var maxTextCols = Math.Min(lineText.Length, width - gutterWidth);
+            var runStart    = gutterWidth;
+            var runSb       = new System.Text.StringBuilder();
+            var runAttr     = normalAttr;  // will be set on first char
 
-                var ch        = lineText[col];
-                var tokenType = TokenTypeAt(tokens, lineIndex, col);
+            for (var col = 0; col < maxTextCols; col++)
+            {
+                var tokenType  = TokenTypeAt(tokens, lineIndex, col);
                 var isSelected = buffer.Selection.HasValue
                                  && PositionInSelection(lineIndex, col, buffer.Selection.Value);
                 var attr = isSelected
                     ? selectionAttr
                     : ColorPairMapper.ToAttribute(theme.ForToken(tokenType));
 
-                SetAttribute(attr);
-                AddStr(screenCol, r, ch.ToString());
+                if (runSb.Length == 0)
+                {
+                    runAttr  = attr;
+                    runStart = gutterWidth + col;
+                }
+                else if (attr != runAttr)
+                {
+                    SetAttribute(runAttr);
+                    AddStr(runStart, r, runSb.ToString());
+                    runSb.Clear();
+                    runAttr  = attr;
+                    runStart = gutterWidth + col;
+                }
+
+                runSb.Append(lineText[col]);
             }
 
-            // Fill rest of line
-            var fillStart = gutterWidth + lineText.Length;
+            if (runSb.Length > 0)
+            {
+                SetAttribute(runAttr);
+                AddStr(runStart, r, runSb.ToString());
+            }
+
+            // Fill rest of line with spaces
+            var fillStart = gutterWidth + maxTextCols;
             if (fillStart < width)
             {
                 SetAttribute(normalAttr);
