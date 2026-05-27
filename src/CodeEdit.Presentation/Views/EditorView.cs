@@ -335,6 +335,13 @@ public sealed class EditorView : View
 
         // ── File shortcuts ─────────────────────────────────────────────────
 
+        // Swallow Escape — Terminal.Gui binds it to Command.Quit at the app level
+        if (key.KeyCode == KeyCode.Esc)
+        {
+            key.Handled = true;
+            return true;
+        }
+
         if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.N))
         {
             NewRequested?.Invoke(this, EventArgs.Empty);
