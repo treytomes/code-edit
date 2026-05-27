@@ -40,7 +40,6 @@ public static class AppBootstrap
         services.AddSingleton<IEventBus, EventBus>();
         services.AddSingleton<SearchService>();
 
-        services.AddSingleton<EditorView>();
         services.AddSingleton<StatusBarView>();
         services.AddSingleton<DialogFactory>();
 
@@ -52,6 +51,12 @@ public static class AppBootstrap
 
         using var app = TGuiApp.Create();
         app.Init();
+
+        // Clipboard requires IApplication (available after Init) — register after Init
+        var clipboardService = new TGuiClipboardService(app);
+        services.AddSingleton<IClipboardService>(clipboardService);
+        services.AddSingleton<EditorView>();
+        provider = services.BuildServiceProvider();
 
         try
         {

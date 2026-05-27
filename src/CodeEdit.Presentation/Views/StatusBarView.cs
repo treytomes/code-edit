@@ -8,6 +8,7 @@ public sealed class StatusBarView : View
 {
     private readonly IEventBus     _eventBus;
     private readonly ThemeRegistry _themeRegistry;
+    private string?                _message;
 
     public StatusBarView(IEventBus eventBus, ThemeRegistry themeRegistry)
     {
@@ -23,16 +24,31 @@ public sealed class StatusBarView : View
         _themeRegistry.ThemeChanged += OnThemeChanged;
     }
 
+    public void SetMessage(string? message)
+    {
+        _message = message;
+        SetNeedsDraw();
+    }
+
     protected override bool OnDrawingContent(DrawContext? context)
     {
         var theme = _themeRegistry.Active;
         var attr  = ColorPairMapper.ToAttribute(theme.StatusBar);
         SetAttribute(attr);
 
+        var width = Viewport.Width;
+
+        if (_message is not null)
+        {
+            var msg = _message.Length <= width
+                ? _message.PadRight(width)
+                : _message[..width];
+            AddStr(0, 0, msg);
+            return true;
+        }
+
         Domain.ITextBuffer? buffer = null;
         try { buffer = _eventBus.Buffer; } catch (InvalidOperationException) { }
-
-        var width = Viewport.Width;
 
         string filePart;
         string cursorPart;
@@ -64,7 +80,12 @@ public sealed class StatusBarView : View
         return true;
     }
 
-    private void OnBufferChanged(object? sender, BufferEventArgs e) => SetNeedsDraw();
+    private void OnBufferChanged(object? sender, BufferEventArgs e)
+    {
+        _message = null;
+        SetNeedsDraw();
+    }
+
     private void OnThemeChanged(object? sender, EventArgs e) => SetNeedsDraw();
 
     protected override void Dispose(bool disposing)

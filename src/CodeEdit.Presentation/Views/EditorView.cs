@@ -11,18 +11,27 @@ namespace CodeEdit.Presentation.Views;
 
 public sealed class EditorView : View
 {
-    private readonly IEventBus       _eventBus;
-    private readonly ThemeRegistry   _themeRegistry;
-    private readonly ISyntaxDetector _syntaxDetector;
-    private ISyntaxProvider?         _syntaxProvider;
-    private int                      _scrollRow;
-    private int                      _wantColumn;
+    private readonly IEventBus        _eventBus;
+    private readonly ThemeRegistry    _themeRegistry;
+    private readonly ISyntaxDetector  _syntaxDetector;
+    private readonly IClipboardService _clipboardService;
+    private readonly StatusBarView    _statusBar;
+    private ISyntaxProvider?          _syntaxProvider;
+    private int                       _scrollRow;
+    private int                       _wantColumn;
 
-    public EditorView(IEventBus eventBus, ThemeRegistry themeRegistry, ISyntaxDetector syntaxDetector)
+    public EditorView(
+        IEventBus         eventBus,
+        ThemeRegistry     themeRegistry,
+        ISyntaxDetector   syntaxDetector,
+        IClipboardService clipboardService,
+        StatusBarView     statusBar)
     {
-        _eventBus       = eventBus;
-        _themeRegistry  = themeRegistry;
-        _syntaxDetector = syntaxDetector;
+        _eventBus         = eventBus;
+        _themeRegistry    = themeRegistry;
+        _syntaxDetector   = syntaxDetector;
+        _clipboardService = clipboardService;
+        _statusBar        = statusBar;
 
         CanFocus = true;
 
@@ -212,6 +221,36 @@ public sealed class EditorView : View
                 _wantColumn = pos.Column;
                 _eventBus.Publish(new DeleteEvent(del.Value.range, del.Value.text));
             }
+            key.Handled = true;
+            return true;
+        }
+
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.C))
+        {
+            if (!_clipboardService.IsSupported)
+                _statusBar.SetMessage("Clipboard not available");
+            else if (!CopyCommand.Execute(_eventBus.Buffer, _clipboardService))
+                _statusBar.SetMessage("No text selected");
+            key.Handled = true;
+            return true;
+        }
+
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.X))
+        {
+            if (!_clipboardService.IsSupported)
+                _statusBar.SetMessage("Clipboard not available");
+            else
+                _eventBus.Publish(new CutEvent(_eventBus.Buffer, _clipboardService));
+            key.Handled = true;
+            return true;
+        }
+
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.V))
+        {
+            if (!_clipboardService.IsSupported)
+                _statusBar.SetMessage("Clipboard not available");
+            else
+                _eventBus.Publish(new PasteEvent(_eventBus.Buffer, _clipboardService));
             key.Handled = true;
             return true;
         }
