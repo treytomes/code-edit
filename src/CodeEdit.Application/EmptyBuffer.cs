@@ -7,11 +7,12 @@ public sealed class EmptyBuffer : IMutableTextBuffer
     private readonly List<string> _lines = [""];
     private CursorPosition _cursor;
     private Selection?     _selection;
+    private bool           _isDirty;
 
     public int            LineCount         => _lines.Count;
     public CursorPosition Cursor            => _cursor;
     public Selection?     Selection         => _selection;
-    public bool           IsDirty          => false;
+    public bool           IsDirty          => _isDirty;
     public string?        FilePath         => null;
     public string?        DetectedLanguage => null;
 
@@ -20,6 +21,7 @@ public sealed class EmptyBuffer : IMutableTextBuffer
     public void InsertText(CursorPosition at, string text)
     {
         if (text.Length == 0) return;
+        _isDirty = true;
 
         if (!text.Contains('\n'))
         {
@@ -40,6 +42,7 @@ public sealed class EmptyBuffer : IMutableTextBuffer
     public void DeleteRange(TextRange range)
     {
         var (start, end) = Normalise(range);
+        _isDirty = true;
 
         if (start.Line == end.Line)
         {
