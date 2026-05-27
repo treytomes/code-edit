@@ -9,6 +9,8 @@ public class BufferEventArgs(IBufferEvent bufferEvent) : EventArgs
 
 public interface IEventBus
 {
+    ITextBuffer Buffer { get; }
+    void SetBuffer(IMutableTextBuffer buffer);
     void Publish(IBufferEvent bufferEvent);
     void Undo();
     void Redo();
