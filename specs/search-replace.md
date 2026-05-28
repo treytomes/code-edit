@@ -1,7 +1,7 @@
 # Spec: Search and Replace
 
 ## Status
-Approved
+Implemented
 
 ## Overview
 A Find/Replace bar that slides in at the bottom of the editor viewport (above the
