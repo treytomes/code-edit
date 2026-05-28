@@ -40,6 +40,11 @@ public sealed class EditorView : View
     // Mouse drag state
     private CursorPosition? _dragAnchor;
 
+    // Search highlights
+    private IReadOnlyList<CursorPosition> _searchMatches = [];
+    private int _searchCurrentIndex = -1;
+    private int _searchQueryLength  = 0;
+
     private const int ScrollLines = 3;
     private const int GutterWidth = 5;
 
@@ -52,6 +57,9 @@ public sealed class EditorView : View
     public event EventHandler? NewRequested;
     public event EventHandler? OpenRequested;
     public event EventHandler? SaveRequested;
+    public event EventHandler? ReplaceRequested;
+    public event EventHandler? FindNextRequested;
+    public event EventHandler? FindPrevRequested;
 
     public EditorView(
         IEventBus         eventBus,
@@ -90,6 +98,14 @@ public sealed class EditorView : View
         _scrollVisualRow = 0;
         _wantColumn     = 0;
         _wrapLayout     = null;
+        SetNeedsDraw();
+    }
+
+    public void UpdateSearchResults(IReadOnlyList<CursorPosition> matches, int currentIndex, int queryLength)
+    {
+        _searchMatches      = matches;
+        _searchCurrentIndex = currentIndex;
+        _searchQueryLength  = queryLength;
         SetNeedsDraw();
     }
 
@@ -217,12 +233,13 @@ public sealed class EditorView : View
         Terminal.Gui.Drawing.Attribute selectionAttr,
         IColorTheme theme)
     {
-        var maxScreenCols = width - GutterWidth;
-        var tabWidth      = _settings.TabWidth;
-        var screenCol     = 0;       // visual column within this segment (for tab stops)
-        var runScreenCol  = GutterWidth;
-        var runSb         = new System.Text.StringBuilder();
-        var runAttr       = normalAttr;
+        var maxScreenCols  = width - GutterWidth;
+        var tabWidth       = _settings.TabWidth;
+        var screenCol      = 0;       // visual column within this segment (for tab stops)
+        var runScreenCol   = GutterWidth;
+        var runSb          = new System.Text.StringBuilder();
+        var runAttr        = normalAttr;
+        var searchMatchAttr = ColorPairMapper.ToAttribute(theme.SearchMatch);
 
         void FlushRun()
         {
@@ -239,9 +256,12 @@ public sealed class EditorView : View
             var tokenType  = TokenTypeAt(tokens, logicalLine, logicalCol);
             var isSelected = buffer.Selection.HasValue
                              && PositionInSelection(logicalLine, logicalCol, buffer.Selection.Value);
+            var matchIdx   = SearchMatchIndexAt(logicalLine, logicalCol);
             var attr = isSelected
                 ? selectionAttr
-                : ColorPairMapper.ToAttribute(theme.ForToken(tokenType));
+                : matchIdx >= 0
+                    ? (matchIdx == _searchCurrentIndex ? selectionAttr : searchMatchAttr)
+                    : ColorPairMapper.ToAttribute(theme.ForToken(tokenType));
 
             if (runSb.Length > 0 && attr != runAttr)
                 FlushRun();
@@ -375,6 +395,27 @@ public sealed class EditorView : View
         if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.S))
         {
             SaveRequested?.Invoke(this, EventArgs.Empty);
+            key.Handled = true;
+            return true;
+        }
+
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.F) || key.KeyCode == KeyCode.F3)
+        {
+            FindNextRequested?.Invoke(this, EventArgs.Empty);
+            key.Handled = true;
+            return true;
+        }
+
+        if (key.KeyCode == (KeyCode.ShiftMask | KeyCode.F3))
+        {
+            FindPrevRequested?.Invoke(this, EventArgs.Empty);
+            key.Handled = true;
+            return true;
+        }
+
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.H))
+        {
+            ReplaceRequested?.Invoke(this, EventArgs.Empty);
             key.Handled = true;
             return true;
         }
@@ -1216,5 +1257,31 @@ public sealed class EditorView : View
         if (line == start.Line && col < start.Column) return false;
         if (line == end.Line   && col >= end.Column)  return false;
         return true;
+    }
+
+    // Returns the index into _searchMatches if (line, col) falls within any match,
+    // or -1 if not. Uses binary search on the sorted match list for efficiency.
+    private int SearchMatchIndexAt(int line, int col)
+    {
+        if (_searchMatches.Count == 0 || _searchQueryLength == 0) return -1;
+
+        // Binary search: find the last match whose start position is <= (line, col)
+        var lo = 0;
+        var hi = _searchMatches.Count - 1;
+        while (lo <= hi)
+        {
+            var mid = (lo + hi) / 2;
+            var m   = _searchMatches[mid];
+            var cmp = m.Line != line ? m.Line.CompareTo(line) : m.Column.CompareTo(col);
+            if (cmp <= 0) lo = mid + 1;
+            else          hi = mid - 1;
+        }
+
+        // hi is now the last match whose start <= (line, col)
+        if (hi < 0) return -1;
+        var match = _searchMatches[hi];
+        if (match.Line == line && col >= match.Column && col < match.Column + _searchQueryLength)
+            return hi;
+        return -1;
     }
 }

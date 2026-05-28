@@ -62,12 +62,14 @@ public static class AppBootstrap
         services.AddSingleton(editorSettings);
         services.AddSingleton<RecentFilesService>();
         services.AddSingleton<EditorView>();
+        services.AddSingleton<SearchBarView>();
         provider = services.BuildServiceProvider();
 
         try
         {
             var editorView   = provider.GetRequiredService<EditorView>();
             var statusBar    = provider.GetRequiredService<StatusBarView>();
+            var searchBar    = provider.GetRequiredService<SearchBarView>();
             var eventBus     = provider.GetRequiredService<IEventBus>();
             var fileService  = provider.GetRequiredService<IFileService>();
             var recentFiles  = provider.GetRequiredService<RecentFilesService>();
@@ -212,6 +214,34 @@ public static class AppBootstrap
             editorView.OpenRequested += (_, _) => DoOpen();
             editorView.SaveRequested += (_, _) => DoSave();
 
+            // ── Search bar wiring ──────────────────────────────────────────
+
+            searchBar.SearchResultsChanged += (_, e) =>
+                editorView.UpdateSearchResults(e.Matches, e.CurrentIndex, e.QueryLength);
+
+            searchBar.BarHeightChanged += (_, barH) =>
+            {
+                editorView.Height = Dim.Fill() - Dim.Absolute(1 + barH);
+                searchBar.Y       = Pos.AnchorEnd(1 + barH);
+                searchBar.Height  = Dim.Absolute(barH);
+            };
+
+            editorView.FindNextRequested    += (_, _) =>
+            {
+                if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
+                    searchBar.Open(SearchBarView.Mode.Find);
+                else
+                    searchBar.NavigateNext();
+            };
+            editorView.FindPrevRequested    += (_, _) =>
+            {
+                if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
+                    searchBar.Open(SearchBarView.Mode.Find);
+                else
+                    searchBar.NavigatePrev();
+            };
+            editorView.ReplaceRequested     += (_, _) => searchBar.Open(SearchBarView.Mode.Replace);
+
             // ── View menu ──────────────────────────────────────────────────
 
             var wrapItem = new MenuItem("  _Word Wrap", "Alt+Z", () => editorView.ToggleWordWrap());
@@ -306,6 +336,25 @@ public static class AppBootstrap
                     new MenuItem("_Copy",  "Ctrl+C", DoCopy),
                     new MenuItem("_Paste", "Ctrl+V", DoPaste),
                 ]),
+                new MenuBarItem("_Search",
+                [
+                    new MenuItem("_Find",            "Ctrl+F", () => searchBar.Open(SearchBarView.Mode.Find)),
+                    new MenuItem("Find _Next",        "F3",     () =>
+                    {
+                        if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
+                            searchBar.Open(SearchBarView.Mode.Find);
+                        else
+                            searchBar.NavigateNext();
+                    }),
+                    new MenuItem("Find _Previous",    "Shift+F3", () =>
+                    {
+                        if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
+                            searchBar.Open(SearchBarView.Mode.Find);
+                        else
+                            searchBar.NavigatePrev();
+                    }),
+                    new MenuItem("_Replace",          "Ctrl+H", () => searchBar.Open(SearchBarView.Mode.Replace)),
+                ]),
                 new MenuBarItem("_View",
                 [
                     wrapItem,
@@ -317,7 +366,12 @@ public static class AppBootstrap
             editorView.X      = 0;
             editorView.Y      = Pos.Bottom(menuBar);
             editorView.Width  = Dim.Fill();
-            editorView.Height = Dim.Fill() - Dim.Absolute(1);
+            editorView.Height = Dim.Fill() - Dim.Absolute(1);   // adjusted by HeightChanged
+
+            searchBar.X      = 0;
+            searchBar.Y      = Pos.AnchorEnd(1);                 // just above status bar when shown
+            searchBar.Width  = Dim.Fill();
+            searchBar.Height = Dim.Absolute(0);
 
             statusBar.X      = 0;
             statusBar.Y      = Pos.AnchorEnd(1);
@@ -325,7 +379,7 @@ public static class AppBootstrap
             statusBar.Height = Dim.Absolute(1);
 
             using var window = new Window { Title = "code-edit" };
-            window.Add(menuBar, editorView, statusBar);
+            window.Add(menuBar, editorView, searchBar, statusBar);
             editorView.SetFocus();
 
             app.Run(window);

@@ -23,5 +23,6 @@ public sealed class DefaultDarkTheme : IColorTheme
     public ColorPair LineNumber => new(8, 0);
     public ColorPair StatusBar  => new(0, 7);
     public ColorPair MenuBar    => new(0, 7);
-    public ColorPair Dialog     => new(0, 7);
+    public ColorPair Dialog      => new(0, 7);
+    public ColorPair SearchMatch => new(0, 3);   // black on dark-yellow
 }

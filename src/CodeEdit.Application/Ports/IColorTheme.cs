@@ -11,4 +11,5 @@ public interface IColorTheme
     ColorPair StatusBar { get; }
     ColorPair MenuBar { get; }
     ColorPair Dialog { get; }
+    ColorPair SearchMatch { get; }
 }
