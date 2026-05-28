@@ -1,7 +1,7 @@
 # Spec: Syntax Highlighting
 
 ## Status
-Draft
+Implemented
 
 ## Overview
 Provide per-language syntax coloring for the seven languages most used in this project: C#, Python, Bash, JSON, YAML, .env, and Markdown. Grammars are stored as JSON resource files so new languages can be added by dropping a file into a well-known directory without rebuilding the application. Tokenization is stateful line-by-line (carrying an opaque integer "start state" across lines) to handle block comments and multi-line strings correctly. Token results are cached per logical line and invalidated forward from the first affected line on every buffer mutation.
