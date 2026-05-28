@@ -1,7 +1,7 @@
 # Spec: Help Menu
 
 ## Status
-Approved
+Implemented
 
 ## Overview
 Add a Help menu to the menu bar with two items: a keyboard shortcut reference dialog and an About dialog. This gives new users a discoverable reference for key bindings without leaving the app, and satisfies the DOS EDIT parity goal of a Help menu entry.
