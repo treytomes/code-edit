@@ -18,6 +18,7 @@ public sealed class EditorView : View
     private readonly IClipboardService _clipboardService;
     private readonly StatusBarView     _statusBar;
     private readonly IApplication      _app;
+    private readonly EditorSettings    _settings;
     private ISyntaxProvider?           _syntaxProvider;
 
     // Token cache: one entry per logical line; null = invalid / not yet computed
@@ -58,7 +59,8 @@ public sealed class EditorView : View
         ISyntaxDetector   syntaxDetector,
         IClipboardService clipboardService,
         StatusBarView     statusBar,
-        IApplication      app)
+        IApplication      app,
+        EditorSettings    settings)
     {
         _eventBus         = eventBus;
         _themeRegistry    = themeRegistry;
@@ -66,6 +68,7 @@ public sealed class EditorView : View
         _clipboardService = clipboardService;
         _statusBar        = statusBar;
         _app              = app;
+        _settings         = settings;
 
         CanFocus              = true;
         MousePositionTracking = true;
@@ -150,12 +153,13 @@ public sealed class EditorView : View
                     && buffer.Cursor.Column >= vr.StartCol
                     && (buffer.Cursor.Column < vr.EndCol || vr.EndCol == lineText.Length))
                 {
-                    var cursorScreenCol = GutterWidth + (buffer.Cursor.Column - vr.StartCol);
+                    var cursorScreenCol = GutterWidth + VisualOffsetInSegment(lineText, vr.StartCol, buffer.Cursor.Column);
                     if (cursorScreenCol < width)
                     {
                         var ch = buffer.Cursor.Column < lineText.Length
                             ? lineText[buffer.Cursor.Column].ToString()
                             : " ";
+                        if (ch == "\t") ch = " ";
                         SetAttribute(selectionAttr);
                         AddStr(cursorScreenCol, r, ch);
                     }
@@ -187,12 +191,13 @@ public sealed class EditorView : View
                 // Cursor overlay
                 if (lineIndex == buffer.Cursor.Line)
                 {
-                    var cursorScreenCol = GutterWidth + buffer.Cursor.Column;
+                    var cursorScreenCol = GutterWidth + VisualOffsetInSegment(lineText, 0, buffer.Cursor.Column);
                     if (cursorScreenCol < width)
                     {
                         var ch = buffer.Cursor.Column < lineText.Length
                             ? lineText[buffer.Cursor.Column].ToString()
                             : " ";
+                        if (ch == "\t") ch = " ";
                         SetAttribute(selectionAttr);
                         AddStr(cursorScreenCol, r, ch);
                     }
@@ -212,15 +217,25 @@ public sealed class EditorView : View
         Terminal.Gui.Drawing.Attribute selectionAttr,
         IColorTheme theme)
     {
-        var segLen   = endCol - startCol;
-        var maxCols  = Math.Min(segLen, width - GutterWidth);
-        var runStart = GutterWidth;
-        var runSb    = new System.Text.StringBuilder();
-        var runAttr  = normalAttr;
+        var maxScreenCols = width - GutterWidth;
+        var tabWidth      = _settings.TabWidth;
+        var screenCol     = 0;       // visual column within this segment (for tab stops)
+        var runScreenCol  = GutterWidth;
+        var runSb         = new System.Text.StringBuilder();
+        var runAttr       = normalAttr;
 
-        for (var offset = 0; offset < maxCols; offset++)
+        void FlushRun()
         {
-            var logicalCol = startCol + offset;
+            if (runSb.Length == 0) return;
+            SetAttribute(runAttr);
+            AddStr(runScreenCol, r, runSb.ToString());
+            runSb.Clear();
+        }
+
+        for (var logicalCol = startCol; logicalCol < endCol && screenCol < maxScreenCols; logicalCol++)
+        {
+            var ch         = lineText[logicalCol];
+            var tabExpand  = ch == '\t' ? tabWidth - (screenCol % tabWidth) : 1;
             var tokenType  = TokenTypeAt(tokens, logicalLine, logicalCol);
             var isSelected = buffer.Selection.HasValue
                              && PositionInSelection(logicalLine, logicalCol, buffer.Selection.Value);
@@ -228,30 +243,23 @@ public sealed class EditorView : View
                 ? selectionAttr
                 : ColorPairMapper.ToAttribute(theme.ForToken(tokenType));
 
+            if (runSb.Length > 0 && attr != runAttr)
+                FlushRun();
+
             if (runSb.Length == 0)
             {
-                runAttr  = attr;
-                runStart = GutterWidth + offset;
-            }
-            else if (attr != runAttr)
-            {
-                SetAttribute(runAttr);
-                AddStr(runStart, r, runSb.ToString());
-                runSb.Clear();
-                runAttr  = attr;
-                runStart = GutterWidth + offset;
+                runAttr      = attr;
+                runScreenCol = GutterWidth + screenCol;
             }
 
-            runSb.Append(lineText[logicalCol]);
+            var spaces = tabExpand > 1 ? new string(' ', Math.Min(tabExpand, maxScreenCols - screenCol)) : null;
+            runSb.Append(spaces ?? ch.ToString());
+            screenCol += tabExpand;
         }
 
-        if (runSb.Length > 0)
-        {
-            SetAttribute(runAttr);
-            AddStr(runStart, r, runSb.ToString());
-        }
+        FlushRun();
 
-        var fillStart = GutterWidth + maxCols;
+        var fillStart = GutterWidth + screenCol;
         if (fillStart < width)
         {
             SetAttribute(normalAttr);
@@ -462,6 +470,96 @@ public sealed class EditorView : View
             return true;
         }
 
+        // ── Tab / Shift+Tab ────────────────────────────────────────────────
+
+        if (key.KeyCode == KeyCode.Tab)
+        {
+            if (!buffer.Selection.HasValue)
+            {
+                // No selection: insert indent at cursor (like typing characters)
+                _eventBus.Publish(new InsertTextEvent(pos, _settings.IndentString));
+            }
+            else
+            {
+                var lines = TouchedLines(buffer);
+                var ev    = new IndentEvent(lines, _settings.IndentString, dedent: false);
+                _eventBus.Publish(ev);
+                AdjustSelectionAfterIndent(buffer, ev);
+            }
+            key.Handled = true;
+            return true;
+        }
+
+        if (key.KeyCode == (KeyCode.ShiftMask | KeyCode.Tab))
+        {
+            var lines = TouchedLines(buffer, dedent: true);
+            var ev    = new IndentEvent(lines, _settings.IndentString, dedent: true);
+            _eventBus.Publish(ev);
+            AdjustSelectionAfterIndent(buffer, ev);
+            key.Handled = true;
+            return true;
+        }
+
+        // ── Ctrl+Left / Ctrl+Right ─────────────────────────────────────────
+
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.CursorLeft))
+        {
+            var from = buffer.Selection.HasValue
+                ? CopyCommand.Normalise(buffer.Selection.Value).Item1
+                : pos;
+            var newPos = WordBoundaryLeft(from, buffer);
+            _wantColumn = VisualColOf(newPos, buffer);
+            _eventBus.Publish(new SetSelectionEvent(null, newPos, buffer.Selection, buffer.Cursor));
+            key.Handled = true;
+            return true;
+        }
+
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.CursorRight))
+        {
+            var from = buffer.Selection.HasValue
+                ? CopyCommand.Normalise(buffer.Selection.Value).Item2
+                : pos;
+            var newPos = WordBoundaryRight(from, buffer);
+            _wantColumn = VisualColOf(newPos, buffer);
+            _eventBus.Publish(new SetSelectionEvent(null, newPos, buffer.Selection, buffer.Cursor));
+            key.Handled = true;
+            return true;
+        }
+
+        // ── Ctrl+Up / Ctrl+Down ────────────────────────────────────────────
+
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.CursorUp))
+        {
+            if (_wordWrap)
+            {
+                var layout = GetWrapLayout(buffer);
+                _scrollVisualRow = Math.Clamp(_scrollVisualRow - 1, 0, Math.Max(0, layout.Count - 1));
+            }
+            else
+            {
+                _scrollRow = Math.Clamp(_scrollRow - 1, 0, Math.Max(0, buffer.LineCount - 1));
+            }
+            SetNeedsDraw();
+            key.Handled = true;
+            return true;
+        }
+
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.CursorDown))
+        {
+            if (_wordWrap)
+            {
+                var layout = GetWrapLayout(buffer);
+                _scrollVisualRow = Math.Clamp(_scrollVisualRow + 1, 0, Math.Max(0, layout.Count - 1));
+            }
+            else
+            {
+                _scrollRow = Math.Clamp(_scrollRow + 1, 0, Math.Max(0, buffer.LineCount - 1));
+            }
+            SetNeedsDraw();
+            key.Handled = true;
+            return true;
+        }
+
         // ── Non-shift arrow keys with selection: collapse ──────────────────
 
         if (key.KeyCode == KeyCode.CursorLeft || key.KeyCode == KeyCode.CursorUp)
@@ -577,6 +675,21 @@ public sealed class EditorView : View
                 if (del.HasValue)
                     _eventBus.Publish(new DeleteEvent(del.Value.range, del.Value.text));
             }
+            key.Handled = true;
+            return true;
+        }
+
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.Z))
+        {
+            if (_eventBus.CanUndo) _eventBus.Undo();
+            key.Handled = true;
+            return true;
+        }
+
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.Y)
+            || key.KeyCode == (KeyCode.CtrlMask | KeyCode.ShiftMask | KeyCode.Z))
+        {
+            if (_eventBus.CanRedo) _eventBus.Redo();
             key.Handled = true;
             return true;
         }
@@ -771,15 +884,41 @@ public sealed class EditorView : View
         return best;
     }
 
-    // Returns the visual column of cursor within its visual row.
-    // When wrap is off this equals cursor.Column; when wrap is on it's the
-    // offset from the visual row's StartCol.
+    // Visual columns from startCol up to (not including) targetCol, expanding \t.
+    private int VisualOffsetInSegment(string line, int startCol, int targetCol)
+    {
+        var tabWidth  = _settings.TabWidth;
+        var visualCol = 0;
+        for (var i = startCol; i < targetCol && i < line.Length; i++)
+        {
+            visualCol += line[i] == '\t'
+                ? tabWidth - (visualCol % tabWidth)
+                : 1;
+        }
+        return visualCol;
+    }
+
+    // Returns the visual column of cursor within its visual row, expanding \t.
     private int VisualColOf(CursorPosition pos, ITextBuffer buffer)
     {
-        if (!_wordWrap) return pos.Column;
-        var layout = GetWrapLayout(buffer);
-        var vrIdx  = FindVisualRowIndex(pos, layout);
-        return pos.Column - layout[vrIdx].StartCol;
+        var tabWidth  = _settings.TabWidth;
+        var line      = buffer.GetLine(pos.Line);
+        var startCol  = 0;
+        if (_wordWrap)
+        {
+            var layout = GetWrapLayout(buffer);
+            var vrIdx  = FindVisualRowIndex(pos, layout);
+            startCol   = layout[vrIdx].StartCol;
+        }
+
+        var visualCol = 0;
+        for (var i = startCol; i < pos.Column && i < line.Length; i++)
+        {
+            visualCol += line[i] == '\t'
+                ? tabWidth - (visualCol % tabWidth)
+                : 1;
+        }
+        return visualCol;
     }
 
     // ── Navigation helpers ─────────────────────────────────────────────────
@@ -877,6 +1016,76 @@ public sealed class EditorView : View
     }
 
     private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+
+    // Returns the set of lines to indent/dedent for the current cursor/selection.
+    // Single line or no selection → just the cursor line.
+    // Multi-line selection → all touched lines.  For indent only: a line whose
+    // only contribution is the active endpoint sitting at column 0 is excluded
+    // (VS Code behaviour — avoids indenting a line you barely selected the start of).
+    // For dedent the exclusion is not applied so that lines already at col 0
+    // after a prior dedent are still included on the next Shift+Tab.
+    private IReadOnlyList<int> TouchedLines(ITextBuffer buffer, bool dedent = false)
+    {
+        if (!buffer.Selection.HasValue)
+            return [buffer.Cursor.Line];
+
+        var (start, end) = CopyCommand.Normalise(buffer.Selection.Value);
+        if (start.Line == end.Line)
+            return [start.Line];
+
+        if (dedent)
+        {
+            var all = new List<int>(end.Line - start.Line + 1);
+            for (var l = start.Line; l <= end.Line; l++) all.Add(l);
+            return all;
+        }
+
+        // Indent: apply col-0 exclusion on the active endpoint's line.
+        var activeIsEnd = buffer.Selection.Value.Active.Line > buffer.Selection.Value.Anchor.Line
+                          || (buffer.Selection.Value.Active.Line == buffer.Selection.Value.Anchor.Line
+                              && buffer.Selection.Value.Active.Column >= buffer.Selection.Value.Anchor.Column);
+
+        var lines = new List<int>();
+        for (var l = start.Line; l <= end.Line; l++)
+        {
+            if (l == end.Line   && activeIsEnd  && buffer.Selection.Value.Active.Column == 0) continue;
+            if (l == start.Line && !activeIsEnd && buffer.Selection.Value.Active.Column == 0) continue;
+            lines.Add(l);
+        }
+        return lines.Count > 0 ? lines : [buffer.Cursor.Line];
+    }
+
+    // After publishing IndentEvent, shift cursor and selection endpoints to
+    // follow the inserted/removed characters at column 0.
+    private void AdjustSelectionAfterIndent(ITextBuffer buffer, IndentEvent ev)
+    {
+        var indentLen = ev.IndentString.Length;
+
+        int AdjustedCol(int lineIndex, int col)
+        {
+            var idx = -1;
+            for (var i = 0; i < ev.Lines.Count; i++)
+                if (ev.Lines[i] == lineIndex) { idx = i; break; }
+            if (idx < 0) return col;
+            if (ev.IsDedent)
+                return Math.Max(0, col - ev.RemovedLengths[idx]);
+            return col + indentLen;
+        }
+
+        var newCursor = buffer.Cursor with { Column = AdjustedCol(buffer.Cursor.Line, buffer.Cursor.Column) };
+
+        Selection? newSel = null;
+        if (buffer.Selection.HasValue)
+        {
+            var sel = buffer.Selection.Value;
+            newSel = new Selection(
+                sel.Anchor with { Column = AdjustedCol(sel.Anchor.Line, sel.Anchor.Column) },
+                sel.Active with { Column = AdjustedCol(sel.Active.Line, sel.Active.Column) });
+        }
+
+        _eventBus.Publish(new SetSelectionEvent(newSel, newCursor, buffer.Selection, buffer.Cursor));
+        _wantColumn = VisualColOf(buffer.Cursor, buffer);
+    }
 
     // ── Screen ↔ buffer mapping ────────────────────────────────────────────
 

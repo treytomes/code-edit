@@ -4,6 +4,7 @@ using CodeEdit.Application.Ports;
 using CodeEdit.Domain;
 using CodeEdit.Infrastructure.Buffer;
 using CodeEdit.Infrastructure.Logging;
+using CodeEdit.Infrastructure.Settings;
 using CodeEdit.Infrastructure.Syntax;
 using CodeEdit.Infrastructure.Theme;
 using CodeEdit.Presentation.Views;
@@ -41,6 +42,7 @@ public static class AppBootstrap
         services.AddSingleton<IEventBus, EventBus>();
         services.AddSingleton<SearchService>();
 
+        services.AddSingleton<SettingsService>();
         services.AddSingleton<StatusBarView>();
         services.AddSingleton<DialogFactory>();
 
@@ -56,15 +58,19 @@ public static class AppBootstrap
         // EditorView requires IApplication (available after Init) — register after Init
         services.AddSingleton<IClipboardService>(new NativeClipboardService());
         services.AddSingleton<Terminal.Gui.App.IApplication>(app);
+        var editorSettings = provider.GetRequiredService<SettingsService>().Load();
+        services.AddSingleton(editorSettings);
+        services.AddSingleton<RecentFilesService>();
         services.AddSingleton<EditorView>();
         provider = services.BuildServiceProvider();
 
         try
         {
-            var editorView  = provider.GetRequiredService<EditorView>();
-            var statusBar   = provider.GetRequiredService<StatusBarView>();
-            var eventBus    = provider.GetRequiredService<IEventBus>();
-            var fileService = provider.GetRequiredService<IFileService>();
+            var editorView   = provider.GetRequiredService<EditorView>();
+            var statusBar    = provider.GetRequiredService<StatusBarView>();
+            var eventBus     = provider.GetRequiredService<IEventBus>();
+            var fileService  = provider.GetRequiredService<IFileService>();
+            var recentFiles  = provider.GetRequiredService<RecentFilesService>();
 
             // Open file from command line or start with an empty buffer
             IMutableTextBuffer buffer;
@@ -72,6 +78,7 @@ public static class AppBootstrap
             if (cmdArgs.Length > 1 && !string.IsNullOrWhiteSpace(cmdArgs[1]))
             {
                 buffer = (IMutableTextBuffer)fileService.Open(cmdArgs[1]);
+                recentFiles.Add(cmdArgs[1]);
                 logger.LogInformation("Opened file: {Path}", cmdArgs[1]);
             }
             else
@@ -127,6 +134,7 @@ public static class AppBootstrap
                 try
                 {
                     SetActiveBuffer((IMutableTextBuffer)fileService.Open(path));
+                    recentFiles.Add(path);
                 }
                 catch (FileServiceException ex)
                 {
@@ -145,6 +153,7 @@ public static class AppBootstrap
                 try
                 {
                     fileService.Save(buf);
+                    recentFiles.Add(buf.FilePath!);
                     statusBar.SetNeedsDraw();
                     editorView.SetNeedsDraw();
                 }
@@ -164,13 +173,20 @@ public static class AppBootstrap
                 var path = dlg.FileName.ToString()!;
                 try
                 {
-                    SetActiveBuffer((IMutableTextBuffer)fileService.SaveAs(eventBus.Buffer, path));
+                    var saved = (IMutableTextBuffer)fileService.SaveAs(eventBus.Buffer, path);
+                    SetActiveBuffer(saved);
+                    recentFiles.Add(path);
                 }
                 catch (FileServiceException ex)
                 {
                     statusBar.SetMessage(ex.Message);
                 }
             }
+
+            // ── Undo / Redo ────────────────────────────────────────────────
+
+            void DoUndo() { if (eventBus.CanUndo) eventBus.Undo(); }
+            void DoRedo() { if (eventBus.CanRedo) eventBus.Redo(); }
 
             // ── Clipboard helpers ──────────────────────────────────────────
 
@@ -202,6 +218,70 @@ public static class AppBootstrap
             editorView.WordWrapChanged += (_, _) =>
                 wrapItem.Title = (editorView.WordWrap ? "✓ " : "  ") + "_Word Wrap";
 
+            // ── Recent files helpers ───────────────────────────────────────
+
+            void DoOpenRecent(string path)
+            {
+                if (eventBus.Buffer.IsDirty)
+                {
+                    var choice = MessageBox.Query(app, "Unsaved Changes",
+                        "You have unsaved changes.\nOpen a new file anyway?", "Yes", "No");
+                    if (choice != 0) return;
+                }
+                try
+                {
+                    SetActiveBuffer((IMutableTextBuffer)fileService.Open(path));
+                    recentFiles.Add(path);
+                }
+                catch (FileServiceException ex)
+                {
+                    statusBar.SetMessage(ex.Message);
+                }
+            }
+
+            Menu BuildRecentMenu()
+            {
+                var paths = recentFiles.Load();
+                if (paths.Count == 0)
+                {
+                    var empty = new MenuItem("(empty)", "", null);
+                    empty.Enabled = false;
+                    return new Menu([empty]);
+                }
+
+                var items = new List<MenuItem>();
+                var home  = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                foreach (var p in paths)
+                {
+                    var captured = p;
+                    var display  = captured.StartsWith(home)
+                        ? "~" + captured[home.Length..]
+                        : captured;
+                    items.Add(new MenuItem(display, "", () => DoOpenRecent(captured)));
+                }
+                items.Add(null!);
+                items.Add(new MenuItem("_Clear Recent Files", "", () => recentFiles.Clear()));
+                return new Menu(items);
+            }
+
+            var recentItem = new MenuItem("Open _Recent", "", BuildRecentMenu());
+            // Rebuild the submenu each time it is about to open
+            recentItem.Accepting += (_, _) => recentItem.SubMenu = BuildRecentMenu();
+
+            var undoItem = new MenuItem("_Undo", "Ctrl+Z", DoUndo);
+            var redoItem = new MenuItem("_Redo", "Ctrl+Y", DoRedo);
+
+            void RefreshUndoRedo()
+            {
+                undoItem.Enabled = eventBus.CanUndo;
+                redoItem.Enabled = eventBus.CanRedo;
+            }
+
+            eventBus.EventExecuted += (_, _) => RefreshUndoRedo();
+            eventBus.EventUndone   += (_, _) => RefreshUndoRedo();
+            eventBus.EventRedone   += (_, _) => RefreshUndoRedo();
+            RefreshUndoRedo();
+
             // ── Menu bar ───────────────────────────────────────────────────
 
             var menuBar = new MenuBar(
@@ -209,14 +289,19 @@ public static class AppBootstrap
                 new MenuBarItem("_File",
                 [
                     new MenuItem("_New",      "Ctrl+N", DoNew),
-                    new MenuItem("_Open",     "Ctrl+O", DoOpen),
+                    new MenuItem("_Open…",    "Ctrl+O", DoOpen),
+                    recentItem,
+                    null!,
                     new MenuItem("_Save",     "Ctrl+S", DoSave),
                     new MenuItem("Save _As…", "",       DoSaveAs),
                     null!,
-                    new MenuItem("_Quit", "", DoQuit),
+                    new MenuItem("E_xit", "", DoQuit),
                 ]),
                 new MenuBarItem("_Edit",
                 [
+                    undoItem,
+                    redoItem,
+                    null!,
                     new MenuItem("Cu_t",   "Ctrl+X", DoCut),
                     new MenuItem("_Copy",  "Ctrl+C", DoCopy),
                     new MenuItem("_Paste", "Ctrl+V", DoPaste),

@@ -97,6 +97,7 @@ public sealed class EventBus(ILogger<EventBus> logger) : IEventBus
             DeleteEvent     e => e.Range.Start.Line,
             CutEvent        e => e.Range.Start.Line,
             PasteEvent      e => e.At.Line,
+            IndentEvent     e => e.Lines.Count > 0 ? e.Lines[0] : -1,
             _                 => -1
         };
         if (line >= 0)
