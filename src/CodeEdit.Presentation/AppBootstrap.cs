@@ -118,7 +118,7 @@ public static class AppBootstrap
                     if (choice != 0) return;
                 }
 
-                var dlg = new OpenDialog { MustExist = true };
+                var dlg = new OpenDialog { MustExist = true, OpenMode = Terminal.Gui.Views.OpenMode.File };
                 app.Run(dlg);
 
                 if (dlg.Canceled || dlg.FilePaths.Count == 0) return;

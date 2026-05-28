@@ -946,11 +946,16 @@ public sealed class EditorView : View
     {
         if (_syntaxProvider is null) return Array.Empty<SyntaxToken>();
 
-        // Grow cache if needed (e.g. new lines inserted)
-        if (lineIndex >= _tokenCache.Length)
+        var lineCount = buffer.LineCount;
+
+        // Resize cache when line count changes. Entries at or after _invalidateFrom are
+        // stale regardless — null them so they don't get treated as valid after a shift.
+        if (_tokenCache.Length != lineCount)
         {
-            var newCache = new CachedLine?[buffer.LineCount];
-            Array.Copy(_tokenCache, newCache, Math.Min(_tokenCache.Length, newCache.Length));
+            var newCache = new CachedLine?[lineCount];
+            var copyEnd  = Math.Min(_invalidateFrom, Math.Min(_tokenCache.Length, lineCount));
+            if (copyEnd > 0)
+                Array.Copy(_tokenCache, newCache, copyEnd);
             _tokenCache = newCache;
         }
 
@@ -960,7 +965,7 @@ public sealed class EditorView : View
                 ? _tokenCache[lineIndex - 1]!.Value.EndState
                 : 0);
 
-        // Invalidate from _invalidateFrom forward lazily
+        // Lazily invalidate at and beyond the watermark
         if (lineIndex >= _invalidateFrom)
             _tokenCache[lineIndex] = null;
 
@@ -968,14 +973,14 @@ public sealed class EditorView : View
         if (cached.HasValue && cached.Value.StartState == startState)
             return cached.Value.Tokens;
 
-        var line    = buffer.GetLine(lineIndex);
-        var result  = _syntaxProvider.TokenizeLine(line, lineIndex, startState);
+        var line   = buffer.GetLine(lineIndex);
+        var result = _syntaxProvider.TokenizeLine(line, lineIndex, startState);
         if (lineIndex < _tokenCache.Length)
             _tokenCache[lineIndex] = new CachedLine(startState, result.Tokens, result.EndState);
 
-        // Reset invalidation watermark once we've caught up past the visible window
-        if (lineIndex > _invalidateFrom)
-            _invalidateFrom = int.MaxValue;
+        // Advance watermark once we've re-tokenized past the stale region
+        if (lineIndex >= _invalidateFrom)
+            _invalidateFrom = lineIndex + 1;
 
         return result.Tokens;
     }

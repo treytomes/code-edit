@@ -123,7 +123,7 @@ public sealed class GrammarSyntaxProviderTests
         var p  = Build(@"{""languageId"":""t"",""displayName"":""T"",""extensions"":[],""shebangs"":[],
             ""rules"":[{""type"":""pattern"",""pattern"":""\\b[0-9]+\\b"",""token"":""Number""}]}");
         var lt = p.TokenizeLine("x = 42;", 0, 0);
-        Assert.Single(lt.Tokens.Where(t => t.Type == TokenType.Number));
+        Assert.Single(lt.Tokens, t => t.Type == TokenType.Number);
     }
 
     // ── PlainText ──────────────────────────────────────────────────────────
