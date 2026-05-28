@@ -1,0 +1,17 @@
+{
+  "languageId": "markdown",
+  "displayName": "Markdown",
+  "extensions": [ ".md", ".markdown" ],
+  "shebangs": [],
+  "rules": [
+    { "type": "fenced-code" },
+    { "type": "line",    "pattern": "^#{1,6}\\s.*$",            "token": "Keyword"       },
+    { "type": "line",    "pattern": "^>.*$",                    "token": "Comment"       },
+    { "type": "span",    "open": "`",  "close": "`",  "escape": null, "multiLine": false, "token": "StringLiteral" },
+    { "type": "line",    "pattern": "^\\s*[-*+]\\s",            "token": "Punctuation"   },
+    { "type": "line",    "pattern": "^\\s*[0-9]+\\.\\s",        "token": "Punctuation"   },
+    { "type": "pattern", "pattern": "\\*\\*.*?\\*\\*",          "token": "Keyword"       },
+    { "type": "pattern", "pattern": "\\*[^*].*?\\*",            "token": "Identifier"    },
+    { "type": "pattern", "pattern": "\\[.*?\\]\\(.*?\\)",       "token": "StringLiteral" }
+  ]
+}

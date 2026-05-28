@@ -1,0 +1,15 @@
+{
+  "languageId": "yaml",
+  "displayName": "YAML",
+  "extensions": [ ".yaml", ".yml" ],
+  "shebangs": [],
+  "rules": [
+    { "type": "line",    "pattern": "#.*$",                                                   "token": "Comment"       },
+    { "type": "span",    "open": "\"",  "close": "\"",  "escape": "\\\\", "multiLine": false, "token": "StringLiteral" },
+    { "type": "span",    "open": "'",   "close": "'",   "escape": null,   "multiLine": false, "token": "StringLiteral" },
+    { "type": "pattern", "pattern": "^[ \\t]*[A-Za-z_][A-Za-z0-9_\\-]*(?=\\s*:)",           "token": "Keyword"       },
+    { "type": "keywords", "words": [ "true","false","null","yes","no","on","off" ],           "token": "Keyword"       },
+    { "type": "pattern", "pattern": "-?\\b[0-9]+(\\.[0-9]+)?\\b",                           "token": "Number"        },
+    { "type": "pattern", "pattern": "[:{}'\"\\[\\],\\-]",                                    "token": "Punctuation"   }
+  ]
+}

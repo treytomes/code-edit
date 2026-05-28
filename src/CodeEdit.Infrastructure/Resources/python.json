@@ -1,0 +1,21 @@
+{
+  "languageId": "python",
+  "displayName": "Python",
+  "extensions": [ ".py" ],
+  "shebangs": [ "python", "python3" ],
+  "rules": [
+    { "type": "line",    "pattern": "#.*$",                                                       "token": "Comment"       },
+    { "type": "span",    "open": "\"\"\"",    "close": "\"\"\"", "escape": null, "multiLine": true,  "token": "StringLiteral" },
+    { "type": "span",    "open": "'''",       "close": "'''",    "escape": null, "multiLine": true,  "token": "StringLiteral" },
+    { "type": "span",    "open": "\"",        "close": "\"",     "escape": "\\\\", "multiLine": false, "token": "StringLiteral" },
+    { "type": "span",    "open": "'",         "close": "'",      "escape": "\\\\", "multiLine": false, "token": "StringLiteral" },
+    { "type": "keywords", "words": [
+        "False","None","True","and","as","assert","async","await","break","class","continue",
+        "def","del","elif","else","except","finally","for","from","global","if","import","in",
+        "is","lambda","nonlocal","not","or","pass","raise","return","try","while","with","yield"
+    ], "token": "Keyword" },
+    { "type": "pattern", "pattern": "\\b[0-9]+(\\.[0-9]+)?\\b", "token": "Number"      },
+    { "type": "pattern", "pattern": "[+\\-*/%&|^~<>=!@]+",      "token": "Operator"    },
+    { "type": "pattern", "pattern": "[(){}\\[\\],;.:]",          "token": "Punctuation" }
+  ]
+}

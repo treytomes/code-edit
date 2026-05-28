@@ -1,3 +1,4 @@
+using CodeEdit.Application.Events;
 using CodeEdit.Domain;
 
 namespace CodeEdit.Application;
@@ -20,4 +21,10 @@ public interface IEventBus
     event EventHandler<BufferEventArgs> EventExecuted;
     event EventHandler<BufferEventArgs> EventUndone;
     event EventHandler<BufferEventArgs> EventRedone;
+
+    /// <summary>
+    /// Fired after any mutating event executes or is undone/redone,
+    /// with the index of the first logical line affected.
+    /// </summary>
+    event EventHandler<BufferMutatedEventArgs> BufferMutated;
 }

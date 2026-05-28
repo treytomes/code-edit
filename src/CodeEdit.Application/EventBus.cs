@@ -1,3 +1,4 @@
+using CodeEdit.Application.Events;
 using CodeEdit.Domain;
 using Microsoft.Extensions.Logging;
 
@@ -26,6 +27,7 @@ public sealed class EventBus(ILogger<EventBus> logger) : IEventBus
     public event EventHandler<BufferEventArgs>? EventExecuted;
     public event EventHandler<BufferEventArgs>? EventUndone;
     public event EventHandler<BufferEventArgs>? EventRedone;
+    public event EventHandler<BufferMutatedEventArgs>? BufferMutated;
 
     public void Publish(IBufferEvent bufferEvent)
     {
@@ -44,6 +46,7 @@ public sealed class EventBus(ILogger<EventBus> logger) : IEventBus
                 _undoStack.Push(merged);
                 _redoStack.Clear();
                 EventExecuted?.Invoke(this, new BufferEventArgs(merged));
+                FireMutated(merged);
                 return;
             }
         }
@@ -51,6 +54,7 @@ public sealed class EventBus(ILogger<EventBus> logger) : IEventBus
         _undoStack.Push(bufferEvent);
         _redoStack.Clear();
         EventExecuted?.Invoke(this, new BufferEventArgs(bufferEvent));
+        FireMutated(bufferEvent);
     }
 
     public void Undo()
@@ -66,6 +70,7 @@ public sealed class EventBus(ILogger<EventBus> logger) : IEventBus
         ev.Undo(buf);
         _redoStack.Push(ev);
         EventUndone?.Invoke(this, new BufferEventArgs(ev));
+        FireMutated(ev);
     }
 
     public void Redo()
@@ -81,5 +86,20 @@ public sealed class EventBus(ILogger<EventBus> logger) : IEventBus
         ev.Execute(buf);
         _undoStack.Push(ev);
         EventRedone?.Invoke(this, new BufferEventArgs(ev));
+        FireMutated(ev);
+    }
+
+    private void FireMutated(IBufferEvent ev)
+    {
+        var line = ev switch
+        {
+            InsertTextEvent e => e.At.Line,
+            DeleteEvent     e => e.Range.Start.Line,
+            CutEvent        e => e.Range.Start.Line,
+            PasteEvent      e => e.At.Line,
+            _                 => -1
+        };
+        if (line >= 0)
+            BufferMutated?.Invoke(this, new BufferMutatedEventArgs(line));
     }
 }

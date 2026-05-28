@@ -1,0 +1,20 @@
+{
+  "languageId": "bash",
+  "displayName": "Bash",
+  "extensions": [ ".sh", ".bash" ],
+  "shebangs": [ "bash", "sh" ],
+  "rules": [
+    { "type": "line",    "pattern": "#.*$",                                                   "token": "Comment"       },
+    { "type": "span",    "open": "\"",  "close": "\"",  "escape": "\\\\", "multiLine": false, "token": "StringLiteral" },
+    { "type": "span",    "open": "'",   "close": "'",   "escape": null,   "multiLine": false, "token": "StringLiteral" },
+    { "type": "pattern", "pattern": "\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}",  "token": "Identifier"  },
+    { "type": "pattern", "pattern": "\\$[A-Za-z_][A-Za-z0-9_]*",        "token": "Identifier"  },
+    { "type": "keywords", "words": [
+        "case","do","done","elif","else","esac","fi","for","function","if","in","return",
+        "select","then","until","while","local","export","readonly","declare","source",
+        "exit","echo","true","false"
+    ], "token": "Keyword" },
+    { "type": "pattern", "pattern": "\\b[0-9]+\\b",      "token": "Number"      },
+    { "type": "pattern", "pattern": "[(){}\\[\\];|&<>]", "token": "Punctuation" }
+  ]
+}

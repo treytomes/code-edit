@@ -1,0 +1,27 @@
+{
+  "languageId": "csharp",
+  "displayName": "C#",
+  "extensions": [ ".cs" ],
+  "shebangs": [],
+  "rules": [
+    { "type": "line",    "pattern": "//.*$",                                                  "token": "Comment"       },
+    { "type": "block",   "open": "/\\*",      "close": "\\*/",                                "token": "Comment"       },
+    { "type": "span",    "open": "@\"",       "close": "\"",    "escape": null, "multiLine": false, "token": "StringLiteral" },
+    { "type": "span",    "open": "\"",        "close": "\"",    "escape": "\\\\", "multiLine": false, "token": "StringLiteral" },
+    { "type": "span",    "open": "'",         "close": "'",     "escape": "\\\\", "multiLine": false, "token": "CharLiteral"   },
+    { "type": "keywords", "words": [
+        "abstract","as","async","await","base","bool","break","byte","case","catch","char",
+        "checked","class","const","continue","decimal","default","delegate","do","double",
+        "else","enum","event","explicit","extern","false","finally","fixed","float","for",
+        "foreach","goto","if","implicit","in","int","interface","internal","is","lock","long",
+        "namespace","new","null","object","operator","out","override","params","private",
+        "protected","public","readonly","record","ref","return","sbyte","sealed","short",
+        "sizeof","stackalloc","static","string","struct","switch","this","throw","true","try",
+        "typeof","uint","ulong","unchecked","unsafe","ushort","using","virtual","void",
+        "volatile","while","var","yield"
+    ], "token": "Keyword" },
+    { "type": "pattern", "pattern": "\\b[0-9]+(\\.[0-9]+)?(f|d|m|L|UL|u)?\\b", "token": "Number"      },
+    { "type": "pattern", "pattern": "[+\\-*/%&|^~<>=!]+",                        "token": "Operator"    },
+    { "type": "pattern", "pattern": "[(){}\\[\\],;.]",                           "token": "Punctuation" }
+  ]
+}

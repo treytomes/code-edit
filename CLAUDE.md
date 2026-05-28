@@ -6,6 +6,8 @@ TUI-based code editor in C#, targeting DOS EDIT feature parity as v1 and progres
 
 | Concern | Choice |
 |---|---|
+
+
 | Language | C# (.NET 9) |
 | TUI framework | Terminal.Gui v2 |
 | DI container | Microsoft.Extensions.DependencyInjection |

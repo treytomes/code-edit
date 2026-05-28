@@ -6,13 +6,14 @@ namespace CodeEdit.Application.Events;
 public sealed class CutEvent : IBufferEvent
 {
     private readonly IClipboardService _clipboard;
-    private readonly TextRange         _range;
     private readonly string            _text;
+
+    internal TextRange Range { get; }
 
     public CutEvent(ITextBuffer buffer, IClipboardService clipboard)
     {
         _clipboard = clipboard;
-        _range     = SelectionRange(buffer);
+        Range      = SelectionRange(buffer);
         _text      = buffer.Selection.HasValue
             ? CopyCommand.SelectedText(buffer)
             : CopyCommand.CurrentLine(buffer);
@@ -21,15 +22,15 @@ public sealed class CutEvent : IBufferEvent
     public void Execute(IMutableTextBuffer buf)
     {
         _clipboard.TrySet(_text);
-        buf.DeleteRange(_range);
-        buf.SetCursor(_range.Start);
+        buf.DeleteRange(Range);
+        buf.SetCursor(Range.Start);
         buf.SetSelection(null);
     }
 
     public void Undo(IMutableTextBuffer buf)
     {
-        buf.InsertText(_range.Start, _text);
-        buf.SetCursor(_range.End);
+        buf.InsertText(Range.Start, _text);
+        buf.SetCursor(Range.End);
         buf.SetSelection(null);
     }
 
@@ -39,7 +40,7 @@ public sealed class CutEvent : IBufferEvent
         return false;
     }
 
-    public override string ToString() => $"range={_range}";
+    public override string ToString() => $"range={Range}";
 
     private static TextRange SelectionRange(ITextBuffer buffer)
     {

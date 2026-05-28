@@ -1,0 +1,13 @@
+{
+  "languageId": "dotenv",
+  "displayName": ".env",
+  "extensions": [ ".env" ],
+  "shebangs": [],
+  "rules": [
+    { "type": "line",    "pattern": "#.*$",                                                   "token": "Comment"       },
+    { "type": "pattern", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?=\\s*=)",                     "token": "Keyword"       },
+    { "type": "span",    "open": "\"",  "close": "\"",  "escape": "\\\\", "multiLine": false, "token": "StringLiteral" },
+    { "type": "span",    "open": "'",   "close": "'",   "escape": null,   "multiLine": false, "token": "StringLiteral" },
+    { "type": "pattern", "pattern": "[A-Za-z0-9_./@\\-]+",                                   "token": "StringLiteral" }
+  ]
+}

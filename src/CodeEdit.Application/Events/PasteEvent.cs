@@ -6,9 +6,11 @@ namespace CodeEdit.Application.Events;
 public sealed class PasteEvent : IBufferEvent
 {
     private readonly string          _pasteText;
-    private readonly CursorPosition  _insertAt;
     private readonly TextRange?      _deletedRange;
     private readonly string?         _deletedText;
+
+    internal CursorPosition At => _insertAt;
+    private readonly CursorPosition  _insertAt;
 
     public PasteEvent(ITextBuffer buffer, IClipboardService clipboard)
     {

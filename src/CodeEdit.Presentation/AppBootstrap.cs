@@ -35,7 +35,7 @@ public static class AppBootstrap
             new ThemeRegistry(sp.GetRequiredService<IColorTheme>()));
 
         services.AddSingleton<PlainTextSyntaxProvider>();
-        services.AddSingleton<ISyntaxDetector, ExtensionShebangSyntaxDetector>();
+        services.AddSingleton<ISyntaxDetector, GrammarRegistry>();
         services.AddSingleton<IFileService, FileService>();
 
         services.AddSingleton<IEventBus, EventBus>();

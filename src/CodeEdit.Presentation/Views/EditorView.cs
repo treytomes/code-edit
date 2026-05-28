@@ -20,6 +20,11 @@ public sealed class EditorView : View
     private readonly IApplication      _app;
     private ISyntaxProvider?           _syntaxProvider;
 
+    // Token cache: one entry per logical line; null = invalid / not yet computed
+    private record struct CachedLine(int StartState, IReadOnlyList<SyntaxToken> Tokens, int EndState);
+    private CachedLine?[] _tokenCache = [];
+    private int           _invalidateFrom = int.MaxValue;
+
     // Scroll state — logical rows (wrap off) or visual rows (wrap on)
     private int _scrollRow;
     private int _scrollVisualRow;
@@ -65,20 +70,23 @@ public sealed class EditorView : View
         CanFocus              = true;
         MousePositionTracking = true;
 
-        _eventBus.EventExecuted += OnBufferChanged;
-        _eventBus.EventUndone   += OnBufferChanged;
-        _eventBus.EventRedone   += OnBufferChanged;
+        _eventBus.EventExecuted  += OnBufferChanged;
+        _eventBus.EventUndone    += OnBufferChanged;
+        _eventBus.EventRedone    += OnBufferChanged;
+        _eventBus.BufferMutated  += OnBufferMutated;
         _themeRegistry.ThemeChanged += OnThemeChanged;
     }
 
     public void SetBuffer(IMutableTextBuffer buffer)
     {
-        var firstLine = buffer.LineCount > 0 ? buffer.GetLine(0) : null;
-        _syntaxProvider   = _syntaxDetector.Detect(buffer.FilePath, firstLine);
-        _scrollRow        = 0;
-        _scrollVisualRow  = 0;
-        _wantColumn       = 0;
-        _wrapLayout       = null;
+        var firstLine   = buffer.LineCount > 0 ? buffer.GetLine(0) : null;
+        _syntaxProvider = _syntaxDetector.Detect(buffer.FilePath, firstLine);
+        _tokenCache     = new CachedLine?[buffer.LineCount];
+        _invalidateFrom = 0;
+        _scrollRow      = 0;
+        _scrollVisualRow = 0;
+        _wantColumn     = 0;
+        _wrapLayout     = null;
         SetNeedsDraw();
     }
 
@@ -124,7 +132,7 @@ public sealed class EditorView : View
 
                 var vr       = layout[vrIdx];
                 var lineText = buffer.GetLine(vr.LogicalLine);
-                var tokens   = _syntaxProvider!.Tokenize([lineText], vr.LogicalLine);
+                var tokens   = GetTokens(buffer, vr.LogicalLine);
 
                 // Gutter: line number on first segment, blank on continuations
                 SetAttribute(lineNumAttr);
@@ -168,7 +176,7 @@ public sealed class EditorView : View
                 }
 
                 var lineText = buffer.GetLine(lineIndex);
-                var tokens   = _syntaxProvider!.Tokenize([lineText], lineIndex);
+                var tokens   = GetTokens(buffer, lineIndex);
 
                 SetAttribute(lineNumAttr);
                 AddStr(0, r, (lineIndex + 1).ToString().PadLeft(4) + " ");
@@ -669,20 +677,43 @@ public sealed class EditorView : View
 
     private void OnBufferChanged(object? sender, BufferEventArgs e)
     {
+        // Resize token cache if line count changed (insertions/deletions change line count)
+        try
+        {
+            var lineCount = _eventBus.Buffer.LineCount;
+            if (_tokenCache.Length != lineCount)
+            {
+                var newCache = new CachedLine?[lineCount];
+                Array.Copy(_tokenCache, newCache, Math.Min(_tokenCache.Length, lineCount));
+                _tokenCache = newCache;
+            }
+        }
+        catch (InvalidOperationException) { }
+
         _wrapLayout = null;
         ScrollToCursor();
         SetNeedsDraw();
     }
 
-    private void OnThemeChanged(object? sender, EventArgs e) => SetNeedsDraw();
+    private void OnBufferMutated(object? sender, BufferMutatedEventArgs e)
+    {
+        _invalidateFrom = Math.Min(_invalidateFrom, e.FirstAffectedLine);
+    }
+
+    private void OnThemeChanged(object? sender, EventArgs e)
+    {
+        _invalidateFrom = 0;
+        SetNeedsDraw();
+    }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
-            _eventBus.EventExecuted -= OnBufferChanged;
-            _eventBus.EventUndone   -= OnBufferChanged;
-            _eventBus.EventRedone   -= OnBufferChanged;
+            _eventBus.EventExecuted  -= OnBufferChanged;
+            _eventBus.EventUndone    -= OnBufferChanged;
+            _eventBus.EventRedone    -= OnBufferChanged;
+            _eventBus.BufferMutated  -= OnBufferMutated;
             _themeRegistry.ThemeChanged -= OnThemeChanged;
         }
         base.Dispose(disposing);
@@ -910,6 +941,44 @@ public sealed class EditorView : View
     }
 
     // ── Syntax / selection helpers ─────────────────────────────────────────
+
+    private IReadOnlyList<SyntaxToken> GetTokens(ITextBuffer buffer, int lineIndex)
+    {
+        if (_syntaxProvider is null) return Array.Empty<SyntaxToken>();
+
+        // Grow cache if needed (e.g. new lines inserted)
+        if (lineIndex >= _tokenCache.Length)
+        {
+            var newCache = new CachedLine?[buffer.LineCount];
+            Array.Copy(_tokenCache, newCache, Math.Min(_tokenCache.Length, newCache.Length));
+            _tokenCache = newCache;
+        }
+
+        // Determine start state from previous line's cached result
+        var startState = lineIndex == 0 ? 0
+            : (_tokenCache.Length > lineIndex - 1 && _tokenCache[lineIndex - 1].HasValue
+                ? _tokenCache[lineIndex - 1]!.Value.EndState
+                : 0);
+
+        // Invalidate from _invalidateFrom forward lazily
+        if (lineIndex >= _invalidateFrom)
+            _tokenCache[lineIndex] = null;
+
+        var cached = lineIndex < _tokenCache.Length ? _tokenCache[lineIndex] : null;
+        if (cached.HasValue && cached.Value.StartState == startState)
+            return cached.Value.Tokens;
+
+        var line    = buffer.GetLine(lineIndex);
+        var result  = _syntaxProvider.TokenizeLine(line, lineIndex, startState);
+        if (lineIndex < _tokenCache.Length)
+            _tokenCache[lineIndex] = new CachedLine(startState, result.Tokens, result.EndState);
+
+        // Reset invalidation watermark once we've caught up past the visible window
+        if (lineIndex > _invalidateFrom)
+            _invalidateFrom = int.MaxValue;
+
+        return result.Tokens;
+    }
 
     private static TokenType TokenTypeAt(IReadOnlyList<SyntaxToken> tokens, int line, int col)
     {
