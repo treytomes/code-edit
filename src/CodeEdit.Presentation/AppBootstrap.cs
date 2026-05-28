@@ -1,3 +1,4 @@
+using System.Reflection;
 using CodeEdit.Application;
 using CodeEdit.Application.Events;
 using CodeEdit.Application.Ports;
@@ -312,6 +313,75 @@ public static class AppBootstrap
             eventBus.EventRedone   += (_, _) => RefreshUndoRedo();
             RefreshUndoRedo();
 
+            // ── Help dialogs ───────────────────────────────────────────────
+
+            const string KeyboardShortcutsText =
+                "FILE\n" +
+                "  Ctrl+N          New file\n" +
+                "  Ctrl+O          Open file\n" +
+                "  Ctrl+S          Save\n" +
+                "\n" +
+                "EDIT\n" +
+                "  Ctrl+Z          Undo\n" +
+                "  Ctrl+Y          Redo\n" +
+                "  Ctrl+X          Cut\n" +
+                "  Ctrl+C          Copy\n" +
+                "  Ctrl+V          Paste\n" +
+                "  Ctrl+A          Select all\n" +
+                "  Tab             Indent selection\n" +
+                "  Shift+Tab       Dedent selection\n" +
+                "\n" +
+                "SEARCH\n" +
+                "  Ctrl+F          Find\n" +
+                "  F3              Find next\n" +
+                "  Shift+F3        Find previous\n" +
+                "  Ctrl+H          Find and replace\n" +
+                "\n" +
+                "NAVIGATION\n" +
+                "  Ctrl+Left/Right Word left / right\n" +
+                "  Ctrl+Up/Down    Scroll up / down\n" +
+                "  Home / End      Line start / end\n" +
+                "  Ctrl+Home/End   Document start / end\n" +
+                "\n" +
+                "VIEW\n" +
+                "  Alt+Z           Toggle word wrap\n";
+
+            void DoKeyboardShortcuts()
+            {
+#pragma warning disable CS0618 // Terminal.Gui's deprecation notice points to their own editor; TextView is correct for a read-only dialog
+                var textView = new TextView
+                {
+                    X        = 0,
+                    Y        = 0,
+                    Width    = Dim.Fill(),
+                    Height   = Dim.Fill() - Dim.Absolute(1),
+                    ReadOnly = true,
+                    Text     = KeyboardShortcutsText,
+                };
+#pragma warning restore CS0618
+                var dlg = new Dialog
+                {
+                    Title  = "Keyboard Shortcuts",
+                    Width  = 60,
+                    Height = 22,
+                };
+                var ok = new Button { Text = "OK", IsDefault = true };
+                ok.Accepting += (_, _) => app.RequestStop(dlg);
+                dlg.Add(textView, ok);
+                ok.X = Pos.Center();
+                ok.Y = Pos.Bottom(textView);
+                app.Run(dlg);
+            }
+
+            void DoAbout()
+            {
+                var ver = Assembly.GetExecutingAssembly().GetName().Version;
+                var verStr = ver is null ? "" : $"{ver.Major}.{ver.Minor}.{ver.Build}";
+                MessageBox.Query(app, "About", $"code-edit  v{verStr}\n\nA lightweight TUI code editor.", "OK");
+            }
+
+            editorView.KeyboardShortcutsRequested += (_, _) => DoKeyboardShortcuts();
+
             // ── Menu bar ───────────────────────────────────────────────────
 
             var menuBar = new MenuBar(
@@ -358,6 +428,11 @@ public static class AppBootstrap
                 new MenuBarItem("_View",
                 [
                     wrapItem,
+                ]),
+                new MenuBarItem("_Help",
+                [
+                    new MenuItem("_Keyboard Shortcuts", "F1", DoKeyboardShortcuts),
+                    new MenuItem("_About",              "",   DoAbout),
                 ]),
             ]);
 

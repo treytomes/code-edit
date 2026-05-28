@@ -60,6 +60,7 @@ public sealed class EditorView : View
     public event EventHandler? ReplaceRequested;
     public event EventHandler? FindNextRequested;
     public event EventHandler? FindPrevRequested;
+    public event EventHandler? KeyboardShortcutsRequested;
 
     public EditorView(
         IEventBus         eventBus,
@@ -365,6 +366,15 @@ public sealed class EditorView : View
         if (key.KeyCode == (KeyCode.AltMask | KeyCode.Z))
         {
             ToggleWordWrap();
+            key.Handled = true;
+            return true;
+        }
+
+        // ── Help ───────────────────────────────────────────────────────────
+
+        if (key.KeyCode == KeyCode.F1)
+        {
+            KeyboardShortcutsRequested?.Invoke(this, EventArgs.Empty);
             key.Handled = true;
             return true;
         }
