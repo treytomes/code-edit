@@ -339,14 +339,14 @@ public static class AppBootstrap
                 new MenuBarItem("_Search",
                 [
                     new MenuItem("_Find",            "Ctrl+F", () => searchBar.Open(SearchBarView.Mode.Find)),
-                    new MenuItem("Find _Next",        "F3",     () =>
+                    new MenuItem("Find _Next",        "Ctrl+F3",       () =>
                     {
                         if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
                             searchBar.Open(SearchBarView.Mode.Find);
                         else
                             searchBar.NavigateNext();
                     }),
-                    new MenuItem("Find _Previous",    "Shift+F3", () =>
+                    new MenuItem("Find _Previous",    "Ctrl+Shift+F3", () =>
                     {
                         if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
                             searchBar.Open(SearchBarView.Mode.Find);

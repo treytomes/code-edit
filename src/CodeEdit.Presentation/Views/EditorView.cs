@@ -399,14 +399,14 @@ public sealed class EditorView : View
             return true;
         }
 
-        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.F) || key.KeyCode == KeyCode.F3)
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.F) || key.KeyCode == (KeyCode.CtrlMask | KeyCode.F3))
         {
             FindNextRequested?.Invoke(this, EventArgs.Empty);
             key.Handled = true;
             return true;
         }
 
-        if (key.KeyCode == (KeyCode.ShiftMask | KeyCode.F3))
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.ShiftMask | KeyCode.F3))
         {
             FindPrevRequested?.Invoke(this, EventArgs.Empty);
             key.Handled = true;

@@ -163,14 +163,14 @@ public sealed class SearchBarView : View
             key.Handled = true;
             return true;
         }
-        if (key.KeyCode == KeyCode.F3
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.F3)
             || key.KeyCode == (KeyCode.CtrlMask | KeyCode.F))
         {
             NavigateNext();
             key.Handled = true;
             return true;
         }
-        if (key.KeyCode == (KeyCode.ShiftMask | KeyCode.F3))
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.ShiftMask | KeyCode.F3))
         {
             NavigatePrev();
             key.Handled = true;
