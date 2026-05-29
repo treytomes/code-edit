@@ -1,0 +1,92 @@
+# Spec: Session Persistence
+
+## Status
+Draft
+
+## Overview
+Persist the list of open files and the active tab index to `.code-edit/session.json` in the working directory. On next launch, restore those tabs automatically. Prerequisite: `buffer-manager.md`.
+
+## Scope
+
+**In scope**
+- `SessionService` in `CodeEdit.Infrastructure.Settings`
+- Save triggered whenever tabs change: file opened, tab closed, active tab changed
+- Restore on launch: open saved files as tabs, activate the previously active tab
+- Missing files silently skipped on restore
+- Unit tests for `SessionService`
+
+**Out of scope**
+- Prompting the user to add `.code-edit/session.json` to `.gitignore` (the user decides)
+- Saving scroll position or cursor position per tab (v3+)
+- Untitled (unsaved) buffers are not persisted
+
+## Design
+
+### Session file
+
+Location: `{workingDir}/.code-edit/session.json`
+
+`workingDir` is determined the same way as the file tree root (file-tree.md):
+1. Parent directory of the command-line file argument, if provided.
+2. Otherwise `Environment.CurrentDirectory`.
+
+The `.code-edit/` directory is created if it doesn't exist.
+
+### `SessionData`
+
+```csharp
+public sealed record SessionData(
+    IReadOnlyList<string> OpenFiles,   // absolute paths; Untitled buffers omitted
+    int ActiveIndex);                  // index into OpenFiles; clamped to valid range on load
+```
+
+JSON representation:
+```json
+{
+  "openFiles": ["/home/trey/project/src/Program.cs", "/home/trey/project/README.md"],
+  "activeIndex": 0
+}
+```
+
+### `SessionService`
+
+```csharp
+public sealed class SessionService(ILogger<SessionService> logger, string? workingDir = null)
+{
+    public SessionData Load();   // returns empty SessionData if file absent or malformed
+    public void Save(SessionData data);
+}
+```
+
+- `workingDir` defaults to `Environment.CurrentDirectory`; the test-isolation pattern matches `SettingsService` and `RecentFilesService`.
+- `Load()` logs a warning and returns `new SessionData([], 0)` if the file is malformed JSON.
+- `Save()` writes atomically (write to `.tmp`, then rename) to avoid corruption on crash.
+
+### `AppBootstrap` integration
+
+**On launch** (after `BufferManager` is initialised with one `EmptyBuffer`):
+1. Call `sessionService.Load()`.
+2. For each path in `OpenFiles` that exists on disk, call `fileService.Open(path)` and `bufferManager.Add(buffer)`.
+3. If any files were restored, remove the initial `EmptyBuffer` tab (it was only a placeholder).
+4. Activate the saved `ActiveIndex` (clamped).
+
+**On change**: subscribe to `BufferManager.TabsChanged` and `BufferManager.ActiveTabChanged`; call `sessionService.Save(BuildSessionData())` in both handlers.
+
+```csharp
+SessionData BuildSessionData() => new(
+    eventBus.Buffers.Tabs
+        .Select(t => t.Buffer.FilePath)
+        .Where(p => p is not null)
+        .ToList()!,
+    eventBus.Buffers.ActiveIndex);
+```
+
+### Tests
+
+- Save and reload round-trips correctly.
+- Missing files on restore are skipped without error.
+- Malformed JSON returns empty `SessionData`.
+- `workingDir` isolation (temp directory) matches existing infrastructure test pattern.
+
+## Open Questions
+None.
