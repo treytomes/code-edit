@@ -32,9 +32,13 @@ public sealed class TabBarView : View
 {
     public event EventHandler<int>? TabActivated;
     public event EventHandler<int>? TabCloseRequested;
+    public event EventHandler<int>? VisibilityChanged;  // arg = new height (0 or 1)
 
     // Called by AppBootstrap whenever BufferManager state changes.
     public void Refresh(IReadOnlyList<TabEntry> tabs, int activeIndex);
+
+    // Toggles visibility and fires VisibilityChanged.
+    public void Toggle();
 }
 ```
 
@@ -44,25 +48,61 @@ public sealed class TabBarView : View
 
 ### Layout
 
+`TabBarView` fires `VisibilityChanged` (arg = 0 or 1) when toggled. `AppBootstrap` subscribes and adjusts `EditorView.Y` and `EditorView.Height` accordingly — the same pattern used by `SearchBarView.BarHeightChanged`.
+
 ```
-MenuBar      Y=0,          Height=1
-TabBar       Y=1,          Height=1
-EditorView   Y=2,          Height=Fill−(2+searchBarHeight+1)
+MenuBar      Y=0,                    Height=1
+TabBar       Y=Pos.Bottom(menuBar),  Height=1  (or 0 when hidden)
+EditorView   Y=Pos.Bottom(tabBar),   Height=Fill−(tabBarHeight+searchBarHeight+1)
 SearchBar    Y=AnchorEnd(1+searchBarHeight)
-StatusBar    Y=AnchorEnd(1), Height=1
+StatusBar    Y=AnchorEnd(1),         Height=1
 ```
 
+When the tab bar is hidden, `EditorView` moves up one row and gains one row of height.
+
 ### Keyboard handling
+
+Three new events added to `EditorView` (no reference to `TabBarView` — decoupled via events handled in `AppBootstrap`):
+
+```csharp
+public event EventHandler? NextTabRequested;
+public event EventHandler? PrevTabRequested;
+public event EventHandler? CloseTabRequested;
+```
 
 Added to `EditorView.OnKeyDown`:
 
 | Key | Action |
 |-----|--------|
-| Ctrl+Tab | `eventBus.Buffers.Activate((activeIndex + 1) % count)` |
-| Ctrl+Shift+Tab | `eventBus.Buffers.Activate((activeIndex − 1 + count) % count)` |
-| Ctrl+W | Fires `TabCloseRequested` for the active index |
+| Ctrl+Tab | Fires `NextTabRequested` |
+| Ctrl+Shift+Tab | Fires `PrevTabRequested` |
+| Ctrl+W | Fires `CloseTabRequested` |
 
-`TabCloseRequested` is handled in `AppBootstrap`: prompts if dirty, then calls `eventBus.Buffers.Close(index)`.
+**Ctrl+Tab intercept note**: Terminal.Gui may use Ctrl+Tab internally for focus cycling. `EditorView.OnKeyDown` must mark the key handled (`key.Handled = true`) before returning to prevent the framework from re-processing it.
+
+`AppBootstrap` handles these events:
+- `NextTabRequested` → `eventBus.Buffers.Activate((i + 1) % count)`
+- `PrevTabRequested` → `eventBus.Buffers.Activate((i - 1 + count) % count)`
+- `CloseTabRequested` → prompts if dirty; if closing the last tab, adds a fresh `EmptyBuffer` first, then closes
+
+### Closing the last tab
+
+```csharp
+void DoCloseTab()
+{
+    var index = eventBus.Buffers.ActiveIndex;
+    if (eventBus.Buffers.ActiveBuffer.IsDirty)
+    {
+        var name   = Path.GetFileName(eventBus.Buffers.ActiveBuffer.FilePath) ?? "Untitled";
+        var choice = MessageBox.Query(app, "Unsaved Changes",
+            $"{name} has unsaved changes. Close anyway?", "Yes", "No");
+        if (choice != 0) return;
+    }
+    if (eventBus.Buffers.Tabs.Count == 1)
+        eventBus.Buffers.Add(new EmptyBuffer());
+    eventBus.Buffers.Close(index);
+}
+```
 
 ### View menu addition
 
