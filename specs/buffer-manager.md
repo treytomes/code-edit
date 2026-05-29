@@ -1,7 +1,7 @@
 # Spec: Buffer Manager
 
 ## Status
-Draft
+Implemented
 
 ## Overview
 Introduce `BufferManager` to hold a collection of open buffers, each with its own `EventHistory`. Update `IEventBus` to forward to the active buffer and its history. This is the infrastructure layer for multiple tabs; it has no UI of its own. Prerequisite: `event-history.md`.

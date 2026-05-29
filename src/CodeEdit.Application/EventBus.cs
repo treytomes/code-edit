@@ -4,65 +4,61 @@ using Microsoft.Extensions.Logging;
 
 namespace CodeEdit.Application;
 
-public sealed class EventBus(ILogger<EventBus> logger) : IEventBus
+public sealed class EventBus : IEventBus
 {
-    private readonly ILogger<EventBus> _logger = logger;
-    private IMutableTextBuffer? _buffer;
-    private readonly EventHistory _history = new();
+    private readonly ILogger<EventBus> _logger;
 
-    public ITextBuffer Buffer =>
-        _buffer ?? throw new InvalidOperationException("Buffer has not been set. Call SetBuffer before using the event bus.");
+    public BufferManager Buffers { get; } = new();
 
-    public void SetBuffer(IMutableTextBuffer buffer)
-    {
-        _buffer = buffer;
-        _history.Clear();
-    }
+    public ITextBuffer Buffer => Buffers.ActiveBuffer;
 
-    public bool CanUndo => _history.CanUndo;
-    public bool CanRedo => _history.CanRedo;
+    public bool CanUndo => Buffers.ActiveHistory.CanUndo;
+    public bool CanRedo => Buffers.ActiveHistory.CanRedo;
 
-    public event EventHandler<BufferEventArgs>? EventExecuted;
-    public event EventHandler<BufferEventArgs>? EventUndone;
-    public event EventHandler<BufferEventArgs>? EventRedone;
+    public event EventHandler<BufferEventArgs>?        EventExecuted;
+    public event EventHandler<BufferEventArgs>?        EventUndone;
+    public event EventHandler<BufferEventArgs>?        EventRedone;
     public event EventHandler<BufferMutatedEventArgs>? BufferMutated;
+    public event EventHandler?                         BufferChanged;
+
+    public EventBus(ILogger<EventBus> logger)
+    {
+        _logger = logger;
+        Buffers.ActiveTabChanged += (_, _) => BufferChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     public void Publish(IBufferEvent bufferEvent)
     {
-        var buf = _buffer ?? throw new InvalidOperationException("Buffer has not been set.");
-
         _logger.LogDebug("Publish {EventType}: {Description}", bufferEvent.GetType().Name, bufferEvent.ToString());
 
-        bufferEvent.Execute(buf);
-        var stored = _history.Push(bufferEvent);
+        bufferEvent.Execute(Buffers.ActiveBuffer);
+        var stored = Buffers.ActiveHistory.Push(bufferEvent);
         EventExecuted?.Invoke(this, new BufferEventArgs(stored));
         FireMutated(stored);
     }
 
     public void Undo()
     {
-        var ev = _history.TryUndo();
+        var ev = Buffers.ActiveHistory.TryUndo();
         if (ev is null)
         {
             _logger.LogWarning("Undo called with empty undo stack");
             return;
         }
-        var buf = _buffer ?? throw new InvalidOperationException("Buffer has not been set.");
-        ev.Undo(buf);
+        ev.Undo(Buffers.ActiveBuffer);
         EventUndone?.Invoke(this, new BufferEventArgs(ev));
         FireMutated(ev);
     }
 
     public void Redo()
     {
-        var ev = _history.TryRedo();
+        var ev = Buffers.ActiveHistory.TryRedo();
         if (ev is null)
         {
             _logger.LogWarning("Redo called with empty redo stack");
             return;
         }
-        var buf = _buffer ?? throw new InvalidOperationException("Buffer has not been set.");
-        ev.Execute(buf);
+        ev.Execute(Buffers.ActiveBuffer);
         EventRedone?.Invoke(this, new BufferEventArgs(ev));
         FireMutated(ev);
     }
@@ -81,5 +77,4 @@ public sealed class EventBus(ILogger<EventBus> logger) : IEventBus
         if (line >= 0)
             BufferMutated?.Invoke(this, new BufferMutatedEventArgs(line));
     }
-
 }

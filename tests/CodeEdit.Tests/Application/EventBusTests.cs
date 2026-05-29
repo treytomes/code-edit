@@ -23,7 +23,7 @@ public sealed class EventBusTests
     {
         var bus = CreateBus();
         buf = CreateBuffer();
-        bus.SetBuffer(buf);
+        bus.Buffers.Add(buf);
         return bus;
     }
 
@@ -159,7 +159,7 @@ public sealed class EventBusTests
         // causing every other typed character to be silently dropped.
         var bus = CreateBus();
         var buf = new EmptyBuffer();
-        bus.SetBuffer(buf);
+        bus.Buffers.Add(buf);
 
         bus.Publish(new InsertTextEvent(new CursorPosition(0, 0), "h"));
         bus.Publish(new InsertTextEvent(new CursorPosition(0, 1), "i"));
@@ -342,30 +342,30 @@ public sealed class EventBusTests
         Assert.Null(buf.Selection);
     }
 
-    // ── SetBuffer ──────────────────────────────────────────────────────────
+    // ── BufferManager integration ──────────────────────────────────────────
 
     [Fact]
-    public void SetBuffer_ClearsBothStacks()
+    public void ActivatingDifferentTab_HasFreshHistory()
     {
-        var bus = BusWithBuffer(out _);
+        var bus  = CreateBus();
+        var buf1 = CreateBuffer("first");
+        var buf2 = CreateBuffer("second");
+        bus.Buffers.Add(buf1);
         bus.Publish(new InsertTextEvent(new CursorPosition(0, 0), "x"));
         bus.Undo();
         Assert.True(bus.CanRedo);
-        Assert.False(bus.CanUndo);
 
-        var buf2 = new FakeBuffer();
-        buf2.Lines.Add("fresh");
-        bus.SetBuffer(buf2);
-
+        bus.Buffers.Add(buf2); // activates tab 1
         Assert.False(bus.CanUndo);
         Assert.False(bus.CanRedo);
     }
 
     [Fact]
-    public void Buffer_BeforeSetBuffer_ThrowsInvalidOperationException()
+    public void Buffer_WithNoTabs_ThrowsInvalidOperationException()
     {
+        // BufferManager starts empty; accessing Buffer before Add throws.
         var bus = CreateBus();
-        Assert.Throws<InvalidOperationException>(() => _ = bus.Buffer);
+        Assert.Throws<ArgumentOutOfRangeException>(() => _ = bus.Buffer);
     }
 
     // ── FakeBuffer ─────────────────────────────────────────────────────────

@@ -89,14 +89,16 @@ public static class AppBootstrap
                 buffer = new EmptyBuffer();
             }
 
-            eventBus.SetBuffer(buffer);
+            eventBus.Buffers.Add(buffer);
             editorView.SetBuffer(buffer);
+
+            eventBus.BufferChanged += (_, _) => editorView.SetBuffer(eventBus.Buffers.ActiveBuffer);
 
             // ── File helpers ───────────────────────────────────────────────
 
             void SetActiveBuffer(IMutableTextBuffer newBuf)
             {
-                eventBus.SetBuffer(newBuf);
+                eventBus.Buffers.Add(newBuf);
                 editorView.SetBuffer(newBuf);
             }
 
