@@ -1,7 +1,7 @@
 # Spec: UI Layout
 
 ## Status
-Approved
+Implemented
 
 ## Overview
 

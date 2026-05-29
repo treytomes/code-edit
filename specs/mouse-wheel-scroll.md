@@ -1,7 +1,7 @@
 # Spec: Mouse Wheel Scrolling
 
 ## Status
-Approved
+Implemented
 
 ## Overview
 Allow the user to scroll the editor viewport using the mouse wheel. Scrolling moves the viewport without changing the cursor position; the cursor remains where it is and becomes off-screen if scrolled past.

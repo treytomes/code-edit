@@ -1,7 +1,7 @@
 # Spec: Editor View
 
 ## Status
-Approved
+Implemented
 
 ## Overview
 

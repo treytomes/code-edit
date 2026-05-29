@@ -1,7 +1,7 @@
 # Spec: File Open / Save / Save As
 
 ## Status
-Approved
+Implemented
 
 ## Overview
 Wire up the File menu's Open, Save, and Save As items so users can open files from disk, save changes back to the same file, and save to a new path. Opening a file updates the syntax provider and resets editor state. Saving clears the dirty flag and updates the title/status bar.

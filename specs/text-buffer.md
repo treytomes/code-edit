@@ -1,7 +1,7 @@
 # Spec: Text Buffer
 
 ## Status
-Approved
+Implemented
 
 ## Overview
 

@@ -62,11 +62,11 @@ dotnet test CodeEdit.sln
 
 ## Milestones
 
-### v1 — DOS EDIT parity (current)
-- [ ] Basic text editing (insert, delete, navigation)
-- [ ] Syntax highlighting
-- [ ] Menu system (File, Edit, Search, Help)
-- [ ] Search and replace
+### v1 — DOS EDIT parity ✓
+- [x] Basic text editing (insert, delete, navigation)
+- [x] Syntax highlighting
+- [x] Menu system (File, Edit, Search, Help)
+- [x] Search and replace
 
 ### v2
 - [ ] File tree panel

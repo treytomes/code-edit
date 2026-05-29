@@ -1,7 +1,7 @@
 # Spec: Word Wrap
 
 ## Status
-Approved
+Implemented
 
 ## Overview
 Add a toggleable soft word-wrap mode to the editor. When enabled, logical lines longer than the viewport width are displayed across multiple visual rows, reflowing automatically on terminal resize. Line numbering shows the logical line number only on the first visual row of each line; continuation rows have a blank gutter.

@@ -1,7 +1,7 @@
 # Spec: Clipboard
 
 ## Status
-Approved
+Implemented
 
 ## Overview
 

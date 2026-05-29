@@ -1,7 +1,7 @@
 # Spec: Overall Architecture
 
 ## Status
-Approved
+Implemented
 
 ## Overview
 

@@ -1,7 +1,7 @@
 # Spec: Event Bus
 
 ## Status
-Approved
+Implemented
 
 ## Overview
 

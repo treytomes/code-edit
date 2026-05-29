@@ -1,7 +1,7 @@
 # Spec: Text Selection and Edit Menu
 
 ## Status
-Approved
+Implemented
 
 ## Overview
 Add text selection to the editor — via mouse click-and-drag and keyboard shortcuts — and expose cut/copy/paste through an Edit menu in addition to the existing keyboard shortcuts. Selection is visually highlighted using the theme's Selection color. Copy/cut/paste already work; this spec wires selection as the prerequisite input.
