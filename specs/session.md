@@ -1,7 +1,7 @@
 # Spec: Session Persistence
 
 ## Status
-Draft
+Approved
 
 ## Overview
 Persist the list of open files and the active tab index to `.code-edit/session.json` in the working directory. On next launch, restore those tabs automatically. Prerequisite: `buffer-manager.md`.
@@ -66,9 +66,9 @@ public sealed class SessionService(ILogger<SessionService> logger, string? worki
 
 **On launch** (after `BufferManager` is initialised with one `EmptyBuffer`):
 1. Call `sessionService.Load()`.
-2. For each path in `OpenFiles` that exists on disk, call `fileService.Open(path)` and `bufferManager.Add(buffer)`.
-3. If any files were restored, remove the initial `EmptyBuffer` tab (it was only a placeholder).
-4. Activate the saved `ActiveIndex` (clamped).
+2. For each path in `OpenFiles` that exists on disk, call `fileService.Open(path)` and `bufferManager.Add(buffer)`. Paths that no longer exist are silently skipped.
+3. If at least one file was successfully restored, close the placeholder `EmptyBuffer` at index 0. This must happen *after* step 2 — `BufferManager.Close` throws if it is the last tab, so the placeholder can only be removed once there is at least one other tab.
+4. Activate the saved `ActiveIndex`, clamped to `[0, restoredCount - 1]` where `restoredCount` is the number of files actually opened in step 2 (not `OpenFiles.Count`, which may be larger if some files were skipped).
 
 **On change**: subscribe to `BufferManager.TabsChanged` and `BufferManager.ActiveTabChanged`; call `sessionService.Save(BuildSessionData())` in both handlers.
 
@@ -86,6 +86,7 @@ SessionData BuildSessionData() => new(
 - Save and reload round-trips correctly.
 - Missing files on restore are skipped without error.
 - Malformed JSON returns empty `SessionData`.
+- `ActiveIndex` is clamped to the number of successfully restored files, not the raw saved value.
 - `workingDir` isolation (temp directory) matches existing infrastructure test pattern.
 
 ## Open Questions
