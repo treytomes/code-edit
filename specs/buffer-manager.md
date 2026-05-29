@@ -25,11 +25,21 @@ Introduce `BufferManager` to hold a collection of open buffers, each with its ow
 
 ### `TabEntry`
 
+`TabEntry` is a reference type (identity semantics — two entries wrapping the same buffer are the same tab):
+
 ```csharp
-public sealed record TabEntry(IMutableTextBuffer Buffer, EventHistory History);
+public sealed class TabEntry
+{
+    public IMutableTextBuffer Buffer  { get; }
+    public EventHistory       History { get; } = new();
+
+    public TabEntry(IMutableTextBuffer buffer) => Buffer = buffer;
+}
 ```
 
 ### `BufferManager`
+
+`BufferManager` starts empty. `AppBootstrap` is responsible for adding the initial buffer via `Add()` immediately after construction.
 
 ```csharp
 public sealed class BufferManager
@@ -40,7 +50,9 @@ public sealed class BufferManager
     public EventHistory ActiveHistory => Tabs[ActiveIndex].History;
 
     // Opens a buffer in a new tab and activates it.
-    // If a tab with the same FilePath already exists, activates it instead.
+    // De-duplication: if a tab with the same non-null FilePath already exists,
+    // activates that tab instead of opening a duplicate.
+    // Multiple Untitled (FilePath == null) tabs are allowed.
     public void Add(IMutableTextBuffer buffer);
 
     // Activates the tab at the given index.
@@ -48,7 +60,8 @@ public sealed class BufferManager
 
     // Closes the tab at the given index.
     // If it was the active tab, activates the nearest remaining tab.
-    // If it was the last tab, adds a fresh EmptyBuffer first.
+    // If it was the last tab, the caller must add a new buffer before calling Close,
+    // or Close will throw — enforced by AppBootstrap (tabs-ui.md).
     public void Close(int index);
 
     public event EventHandler<int>? ActiveTabChanged;  // arg = new active index
@@ -56,8 +69,6 @@ public sealed class BufferManager
     public event EventHandler? TabsChanged;            // add or close
 }
 ```
-
-`BufferManager` starts with one tab containing an `EmptyBuffer`.
 
 ### `IEventBus` changes
 
@@ -69,7 +80,8 @@ event EventHandler? BufferChanged;   // fires when active tab changes
 ```
 
 `IEventBus.Buffer` remains as a convenience property forwarding to `Buffers.ActiveBuffer`.
-`IEventBus.SetBuffer()` is removed; all callers use `Buffers.Add()` / `Buffers.Activate()`.
+
+`IEventBus.SetBuffer()` is removed. This is a breaking change on the interface — all callers in `AppBootstrap` are migrated to `Buffers.Add()`, and the `EventBusTests.SetBuffer_ClearsBothStacks` test is replaced by an equivalent `BufferManagerTests` test covering the same invariant (activating a different tab starts with a fresh history).
 
 `EventBus.Publish()` uses `Buffers.ActiveHistory.Push(ev)` (rather than the previous single `_history`).
 `CanUndo`/`CanRedo`/`Undo()`/`Redo()` forward to `Buffers.ActiveHistory`.
@@ -78,8 +90,8 @@ event EventHandler? BufferChanged;   // fires when active tab changes
 
 ### `AppBootstrap` migration
 
-All `eventBus.SetBuffer(buf)` calls become `eventBus.Buffers.Add(buf)`.
-`editorView` and `searchBar` subscribe to `eventBus.BufferChanged` and refresh accordingly (same call they already make on initial `SetBuffer`).
+`eventBus.SetBuffer(buf)` call sites become `eventBus.Buffers.Add(buf)`.
+`editorView` and `searchBar` subscribe to `eventBus.BufferChanged` and refresh accordingly (same call they already make on initial buffer set).
 
 ## Open Questions
 None.
