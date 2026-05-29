@@ -84,7 +84,7 @@ public sealed class SearchBarView : View
 
     // ── Public API ─────────────────────────────────────────────────────────
 
-    public void Open(Mode mode)
+    public void Open(Mode mode, bool resetQuery = true)
     {
         var wasOpen = _mode != Mode.Closed;
         _mode = mode;
@@ -97,10 +97,25 @@ public sealed class SearchBarView : View
 
         if (!wasOpen)
         {
-            _findInput.Text = "";
-            _matches        = [];
-            _currentIndex   = -1;
-            RaiseSearchResults();
+            if (resetQuery || string.IsNullOrEmpty(Query))
+            {
+                _findInput.Text = "";
+                _matches        = [];
+                _currentIndex   = -1;
+                RaiseSearchResults();
+            }
+            else
+            {
+                // Re-opening with a prior query — refresh matches against current buffer
+                ITextBuffer? buffer = null;
+                try { buffer = _eventBus.Buffer; } catch (InvalidOperationException) { }
+                if (buffer is not null)
+                {
+                    _matches      = _searchService.FindAll(buffer, Query, MatchCase, WholeWord);
+                    _currentIndex = -1;
+                    RaiseSearchResults();
+                }
+            }
         }
 
         _findInput.SetFocus();

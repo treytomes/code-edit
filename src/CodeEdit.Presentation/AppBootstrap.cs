@@ -227,17 +227,17 @@ public static class AppBootstrap
                 searchBar.Height  = Dim.Absolute(barH);
             };
 
-            editorView.FindNextRequested    += (_, _) =>
+            editorView.FindNextRequested += (_, _) =>
             {
                 if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
-                    searchBar.Open(SearchBarView.Mode.Find);
+                    searchBar.Open(SearchBarView.Mode.Find, resetQuery: false);
                 else
                     searchBar.NavigateNext();
             };
-            editorView.FindPrevRequested    += (_, _) =>
+            editorView.FindPrevRequested += (_, _) =>
             {
                 if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
-                    searchBar.Open(SearchBarView.Mode.Find);
+                    searchBar.Open(SearchBarView.Mode.Find, resetQuery: false);
                 else
                     searchBar.NavigatePrev();
             };
@@ -412,14 +412,14 @@ public static class AppBootstrap
                     new MenuItem("Find _Next",        "F3",       () =>
                     {
                         if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
-                            searchBar.Open(SearchBarView.Mode.Find);
+                            searchBar.Open(SearchBarView.Mode.Find, resetQuery: false);
                         else
                             searchBar.NavigateNext();
                     }),
                     new MenuItem("Find _Previous",    "Shift+F3", () =>
                     {
                         if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
-                            searchBar.Open(SearchBarView.Mode.Find);
+                            searchBar.Open(SearchBarView.Mode.Find, resetQuery: false);
                         else
                             searchBar.NavigatePrev();
                     }),
