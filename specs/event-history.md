@@ -1,7 +1,7 @@
 # Spec: Event History Extraction
 
 ## Status
-Approved
+Implemented
 
 ## Overview
 Extract the undo/redo stack out of `EventBus` into a standalone `EventHistory` class. This is a pure internal refactor with no user-visible change. It is a prerequisite for per-tab undo/redo (each tab will own its own `EventHistory` instance).
