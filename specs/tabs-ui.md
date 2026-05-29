@@ -1,7 +1,7 @@
 # Spec: Tab Bar UI
 
 ## Status
-Draft
+Implemented
 
 ## Overview
 Add a `TabBarView` row below the menu bar that displays the open tabs, supports mouse activation, scrolls when tabs overflow the terminal width, and provides keyboard shortcuts for cycling and closing tabs. Prerequisite: `buffer-manager.md`.

@@ -64,6 +64,7 @@ public static class AppBootstrap
         services.AddSingleton<RecentFilesService>();
         services.AddSingleton<EditorView>();
         services.AddSingleton<SearchBarView>();
+        services.AddSingleton<TabBarView>();
         provider = services.BuildServiceProvider();
 
         try
@@ -71,6 +72,7 @@ public static class AppBootstrap
             var editorView   = provider.GetRequiredService<EditorView>();
             var statusBar    = provider.GetRequiredService<StatusBarView>();
             var searchBar    = provider.GetRequiredService<SearchBarView>();
+            var tabBar       = provider.GetRequiredService<TabBarView>();
             var eventBus     = provider.GetRequiredService<IEventBus>();
             var fileService  = provider.GetRequiredService<IFileService>();
             var recentFiles  = provider.GetRequiredService<RecentFilesService>();
@@ -91,8 +93,13 @@ public static class AppBootstrap
 
             eventBus.Buffers.Add(buffer);
             editorView.SetBuffer(buffer);
+            tabBar.Refresh(eventBus.Buffers.Tabs, eventBus.Buffers.ActiveIndex);
 
-            eventBus.BufferChanged += (_, _) => editorView.SetBuffer(eventBus.Buffers.ActiveBuffer);
+            void RefreshTabBar()
+                => tabBar.Refresh(eventBus.Buffers.Tabs, eventBus.Buffers.ActiveIndex);
+
+            eventBus.BufferChanged  += (_, _) => { editorView.SetBuffer(eventBus.Buffers.ActiveBuffer); RefreshTabBar(); };
+            eventBus.EventExecuted  += (_, _) => RefreshTabBar();
 
             // ── File helpers ───────────────────────────────────────────────
 
@@ -224,7 +231,8 @@ public static class AppBootstrap
 
             searchBar.BarHeightChanged += (_, barH) =>
             {
-                editorView.Height = Dim.Fill() - Dim.Absolute(1 + barH);
+                var tabH = tabBar.Visible ? 1 : 0;
+                editorView.Height = Dim.Fill() - Dim.Absolute(tabH + 1 + barH);
                 searchBar.Y       = Pos.AnchorEnd(1 + barH);
                 searchBar.Height  = Dim.Absolute(barH);
             };
@@ -243,13 +251,54 @@ public static class AppBootstrap
                 else
                     searchBar.NavigatePrev();
             };
-            editorView.ReplaceRequested     += (_, _) => searchBar.Open(SearchBarView.Mode.Replace);
+            editorView.ReplaceRequested += (_, _) => searchBar.Open(SearchBarView.Mode.Replace);
+
+            // ── Tab wiring ─────────────────────────────────────────────────
+
+            tabBar.TabActivated     += (_, i) => eventBus.Buffers.Activate(i);
+            tabBar.TabCloseRequested += (_, i) => DoCloseTab(i);
+
+            editorView.NextTabRequested  += (_, _) =>
+            {
+                var count = eventBus.Buffers.Tabs.Count;
+                eventBus.Buffers.Activate((eventBus.Buffers.ActiveIndex + 1) % count);
+            };
+            editorView.PrevTabRequested  += (_, _) =>
+            {
+                var count = eventBus.Buffers.Tabs.Count;
+                eventBus.Buffers.Activate((eventBus.Buffers.ActiveIndex - 1 + count) % count);
+            };
+            editorView.CloseTabRequested += (_, _) => DoCloseTab(eventBus.Buffers.ActiveIndex);
+
+            void DoCloseTab(int index)
+            {
+                var buf  = eventBus.Buffers.Tabs[index].Buffer;
+                if (buf.IsDirty)
+                {
+                    var name   = buf.FilePath is null ? "Untitled" : Path.GetFileName(buf.FilePath);
+                    var choice = MessageBox.Query(app, "Unsaved Changes",
+                        $"{name} has unsaved changes. Close anyway?", "Yes", "No");
+                    if (choice != 0) return;
+                }
+                if (eventBus.Buffers.Tabs.Count == 1)
+                    eventBus.Buffers.Add(new EmptyBuffer());
+                eventBus.Buffers.Close(index);
+                RefreshTabBar();
+            }
 
             // ── View menu ──────────────────────────────────────────────────
 
-            var wrapItem = new MenuItem("  _Word Wrap", "Alt+Z", () => editorView.ToggleWordWrap());
+            var wrapItem    = new MenuItem("  _Word Wrap", "Alt+Z", () => editorView.ToggleWordWrap());
             editorView.WordWrapChanged += (_, _) =>
                 wrapItem.Title = (editorView.WordWrap ? "✓ " : "  ") + "_Word Wrap";
+
+            var tabBarItem  = new MenuItem("✓ _Tab Bar", "", () => tabBar.Toggle());
+            tabBar.VisibilityChanged += (_, h) =>
+            {
+                tabBarItem.Title  = (h > 0 ? "✓ " : "  ") + "_Tab Bar";
+                // tabBar.Height is already updated; Pos.Bottom(tabBar) tracks it automatically
+                editorView.Height = Dim.Fill() - Dim.Absolute(1 + h);
+            };
 
             // ── Recent files helpers ───────────────────────────────────────
 
@@ -429,6 +478,7 @@ public static class AppBootstrap
                 ]),
                 new MenuBarItem("_View",
                 [
+                    tabBarItem,
                     wrapItem,
                 ]),
                 new MenuBarItem("_Help",
@@ -440,13 +490,18 @@ public static class AppBootstrap
 
             // ── Layout ─────────────────────────────────────────────────────
 
+            tabBar.X      = 0;
+            tabBar.Y      = Pos.Bottom(menuBar);
+            tabBar.Width  = Dim.Fill();
+            tabBar.Height = Dim.Absolute(1);
+
             editorView.X      = 0;
-            editorView.Y      = Pos.Bottom(menuBar);
+            editorView.Y      = Pos.Bottom(tabBar);
             editorView.Width  = Dim.Fill();
-            editorView.Height = Dim.Fill() - Dim.Absolute(1);   // adjusted by HeightChanged
+            editorView.Height = Dim.Fill() - Dim.Absolute(2);   // 1 tabBar + 1 statusBar; adjusted by events
 
             searchBar.X      = 0;
-            searchBar.Y      = Pos.AnchorEnd(1);                 // just above status bar when shown
+            searchBar.Y      = Pos.AnchorEnd(1);
             searchBar.Width  = Dim.Fill();
             searchBar.Height = Dim.Absolute(0);
 
@@ -456,7 +511,7 @@ public static class AppBootstrap
             statusBar.Height = Dim.Absolute(1);
 
             using var window = new Window { Title = "code-edit" };
-            window.Add(menuBar, editorView, searchBar, statusBar);
+            window.Add(menuBar, tabBar, editorView, searchBar, statusBar);
             editorView.SetFocus();
 
             app.Run(window);
