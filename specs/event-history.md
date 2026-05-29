@@ -1,7 +1,7 @@
 # Spec: Event History Extraction
 
 ## Status
-Draft
+Approved
 
 ## Overview
 Extract the undo/redo stack out of `EventBus` into a standalone `EventHistory` class. This is a pure internal refactor with no user-visible change. It is a prerequisite for per-tab undo/redo (each tab will own its own `EventHistory` instance).
@@ -50,6 +50,8 @@ public void Redo() { var ev = _history.TryRedo(); if (ev != null) { ev.Execute(_
 ```
 
 `EventBus.Publish()` calls `_history.Push(ev)` after executing.
+
+**Logging**: `EventHistory` has no logger dependency and returns `null` from `TryUndo()`/`TryRedo()` when the respective stack is empty. The existing "Undo called with empty undo stack" / "Redo called with empty redo stack" warning logs stay in `EventBus`, which checks for `null` before proceeding.
 
 ### Tests
 
