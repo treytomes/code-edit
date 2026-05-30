@@ -13,11 +13,12 @@ An in-app TUI dialog for browsing, creating, editing, and deleting named color t
 - Theme list panel: all themes in `~/.code-edit/themes/`, with the active theme marked
 - Color role editor: scrollable list of named roles; clicking/entering a swatch opens an inline RGB editor
 - Live preview: changes apply immediately via `ThemeRegistry.SetTheme()`
-- Per-theme actions: New, Rename, Duplicate, Delete (built-in theme is protected from rename/delete), Save, Revert
+- Per-theme actions: New (clone + rename prompt), Rename, Duplicate (clone + rename prompt), Delete (built-in protected), Save, Revert
 - Export: write the selected theme to a user-chosen path via Save dialog
 - Import: open a `.json` file via Open dialog and add it to `~/.code-edit/themes/`; reject files that don't parse as valid themes
 - `ThemeService` in `CodeEdit.Infrastructure.Settings`
 - Active theme name stored in `settings.json` as `"activeTheme"`; loaded at launch
+- Error dialogs for all failable operations (Import, Export, Save, Delete, Rename collisions)
 - Tests for `ThemeService` and `UserTheme`
 
 **Out of scope**
@@ -173,20 +174,51 @@ Opens as an 80×24 modal dialog.
 - **Left panel**: scrollable list of theme names; `●` marks the active theme; `[ New ]`, `[ Dupe ]`, `[ Del ]`, `[ Import ]`, `[ Export ]` buttons below
 - **Right panel**: scrollable role list; selecting a swatch (Tab/Enter or click) opens the inline RGB editor at the bottom
 - **Live preview**: every valid RGB change immediately calls `themeRegistry.SetTheme(workingCopy)`; the editor behind the dialog redraws in real time
-- **New**: prompts for a name, creates a clone of the currently selected theme
-- **Dupe**: clones selected theme, prompts for a new name
-- **Del**: disabled for the built-in theme; prompts for confirmation otherwise
-- **Import**: opens a file-picker dialog; on success adds the theme to the list and selects it
-- **Export**: opens a save dialog pre-filled with the theme's slug filename
-- **Save**: saves the working copy to disk; updates `settings.json` `activeTheme` if the saved theme is the active one
-- **Revert**: discards unsaved edits to the selected theme, restores from disk (or built-in defaults); re-applies to registry
+
+#### Name prompt dialog
+
+New, Dupe, and Rename all share the same inline name prompt:
+
+```
+┌─ New Theme Name ─────────────────────┐
+│ Name: [ My Custom Theme            ] │
+│               [ Cancel ]  [ OK ]     │
+└──────────────────────────────────────┘
+```
+
+Validation runs on OK: name must be non-empty and not already exist (case-insensitive). If invalid, an error message appears inside the prompt dialog and it stays open.
+
+#### Button behaviours
+
+- **New**: opens name prompt; on confirm, clones the currently selected theme under the new name, adds it to the list, selects it, and marks it unsaved
+- **Dupe**: identical to New — opens name prompt, clones, selects, marks unsaved
+- **Rename**: opens name prompt pre-filled with current name; on confirm, renames the working copy (built-in theme: button disabled)
+- **Del**: disabled for the built-in theme; shows confirmation dialog (`"Delete '{name}'? This cannot be undone." [ Delete ] [ Cancel ]`); on confirm, deletes the file and selects the next theme in the list (or the built-in if the list is now empty)
+- **Import**: opens a file-picker dialog (`.json` filter); on parse failure shows an error dialog; on name collision shows the name prompt pre-filled with the imported name so the user can rename before adding
+- **Export**: opens a save dialog pre-filled with the theme's slug filename; on failure shows an error dialog
+- **Save**: saves working copy to disk; on failure shows an error dialog; updates `settings.json` `activeTheme` if the saved theme is the active one
+- **Revert**: discards unsaved edits to the selected theme, restores from disk (or built-in defaults); re-applies to registry; no confirmation (edits not yet saved are simply lost)
 - **Cancel**: restores the original theme that was active when the dialog opened; no disk writes
+
+#### Error dialog
+
+All failable operations (Save, Export, Import, Delete) catch exceptions and display:
+
+```
+┌─ Error ──────────────────────────────────────────────────────┐
+│ Could not save theme: Access to path '...' is denied.        │
+│                                    [ OK ]                    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+`MessageBox.Query` is used for this; the message is `ex.Message`.
 
 ### Name validation and slug generation
 
 - Theme names must be non-empty and unique (case-insensitive among loaded themes).
 - Slug: lowercase, spaces → hyphens, strip non-alphanumeric except hyphens. E.g. `"My Theme!"` → `my-theme.json`.
-- Import: if a name collision exists, the import is rejected with an error message offering the user the option to rename before importing.
+- If a rename would produce a slug that collides with an existing file for a *different* theme (e.g. two themes slugging to the same filename), the validation error is shown in the name prompt.
+- Import name collision: shows the name prompt pre-filled with the imported theme's name; user can adjust and confirm, or cancel the import entirely.
 
 ### `AppBootstrap` integration
 
@@ -203,13 +235,15 @@ Opens as an 80×24 modal dialog.
 - `Export` writes a valid theme file to the given path.
 - `Import` loads a valid file and adds it to the themes directory.
 - `Import` throws `ThemeImportException` on malformed JSON.
+- `Import` throws `ThemeImportException` on name collision.
 - `themesDir` isolation (temp directory).
 
 **`UserTheme`**
 - `FromDefaults()` matches `DefaultDarkTheme` values for all roles.
 - `Clone()` produces a deep copy; modifying the clone does not affect the original.
+- `Clone(newName)` sets the clone's name without affecting the original's name.
 - `ForToken` falls back to `Normal` for an unrecognised token type.
-- Copy constructor copies all fields.
+- Copy constructor copies all fields including name.
 
 ## Open Questions
 None.
