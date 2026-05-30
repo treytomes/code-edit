@@ -4,34 +4,37 @@
 Draft
 
 ## Overview
-An in-app TUI dialog that lets the user view and edit the active color theme. Changes are saved to `~/.code-edit/themes/current.json` and applied immediately. The user can also reset to the built-in VS Code Dark+ defaults.
+An in-app TUI dialog for browsing, creating, editing, and deleting named color themes. Themes are stored as individual JSON files in `~/.code-edit/themes/`. The active theme name is persisted in `settings.json`. Users can export any theme to an arbitrary path and import theme files from the file tree or a file-picker dialog.
 
 ## Scope
 
 **In scope**
-- `ThemeEditorDialog` — modal dialog accessible from View > Edit Theme…
-- A scrollable list of named color roles (Normal, Selection, TabBar, FileTree, StatusBar, MenuBar, LineNumber, SearchMatch, and all token types)
-- Each row shows the role name, a foreground color swatch, and a background color swatch
-- Clicking or pressing Enter on a swatch opens an inline RGB editor (R/G/B fields, 0–255)
-- Live preview: changes apply to the active theme and redraw the editor immediately
-- Save to `~/.code-edit/themes/current.json`; loaded automatically on next launch
-- Reset to defaults button: restores built-in VS Code Dark+ values (in memory and on disk)
-- `ThemeService` in `CodeEdit.Infrastructure.Settings` handles load/save
+- `ThemeEditorDialog` — modal dialog, View > Edit Theme…
+- Theme list panel: all themes in `~/.code-edit/themes/`, with the active theme marked
+- Color role editor: scrollable list of named roles; clicking/entering a swatch opens an inline RGB editor
+- Live preview: changes apply immediately via `ThemeRegistry.SetTheme()`
+- Per-theme actions: New, Rename, Duplicate, Delete (built-in theme is protected from rename/delete), Save, Revert
+- Export: write the selected theme to a user-chosen path via Save dialog
+- Import: open a `.json` file via Open dialog and add it to `~/.code-edit/themes/`; reject files that don't parse as valid themes
+- `ThemeService` in `CodeEdit.Infrastructure.Settings`
+- Active theme name stored in `settings.json` as `"activeTheme"`; loaded at launch
+- Tests for `ThemeService` and `UserTheme`
 
 **Out of scope**
-- Named theme presets / switching between multiple named themes (v4+)
-- Import/export of `.json` theme files via file picker (v4+)
-- Font or font-size settings
+- Online theme gallery / marketplace
 - Syntax grammar editing
+- Font or font-size settings
+- Theme file watching / live reload from disk
 
 ## Design
 
-### Theme file
+### Theme file format
 
-Location: `~/.code-edit/themes/current.json`
+Each theme is a standalone `.json` file in `~/.code-edit/themes/`:
 
 ```json
 {
+  "name": "VS Code Dark+",
   "normal":      { "fg": "#D4D4D4", "bg": "#1E1E1E" },
   "selection":   { "fg": "#FFFFFF", "bg": "#264F78" },
   "lineNumber":  { "fg": "#858585", "bg": "#1E1E1E" },
@@ -54,29 +57,40 @@ Location: `~/.code-edit/themes/current.json`
 }
 ```
 
-Colors are stored as CSS hex strings (`#RRGGBB`). Alpha is always 255 and not stored.
+Colors are CSS hex strings (`#RRGGBB`). The file name on disk is a sanitised slug of the theme name (e.g. `vs-code-dark-plus.json`); the `"name"` field is the display name. The built-in VS Code Dark+ theme is written to this directory on first launch if no themes exist yet.
 
-### `ThemeService`
+### `settings.json` addition
 
-```csharp
-public sealed class ThemeService(ILogger<ThemeService> logger, string? settingsDir = null)
+```json
 {
-    public IColorTheme Load();              // returns DefaultDarkTheme if file absent or malformed
-    public void Save(IColorTheme theme);    // serializes to current.json
+  "tabWidth": 4,
+  "insertSpaces": true,
+  "recentFilesMax": 10,
+  "activeTheme": "VS Code Dark+"
 }
 ```
 
-- `settingsDir` defaults to `~/.code-edit/themes/`; test-isolation pattern matches existing services.
-- `Save()` writes atomically (`.tmp` → rename).
-- `Load()` logs a warning and falls back to `DefaultDarkTheme` on any error.
+`activeTheme` is matched against the `"name"` field of loaded theme files. If absent or unmatched, the built-in `DefaultDarkTheme` is used as a fallback.
+
+### `EditorSettings` addition
+
+```csharp
+public sealed record EditorSettings(
+    int TabWidth,
+    bool InsertSpaces,
+    int RecentFilesMax,
+    string? ActiveTheme = null);
+```
 
 ### `UserTheme`
 
-A mutable concrete implementation of `IColorTheme` whose properties are settable:
+Mutable concrete `IColorTheme` used for editing and for loaded user themes:
 
 ```csharp
 public sealed class UserTheme : IColorTheme
 {
+    public string Name { get; set; }
+
     public ColorPair Normal      { get; set; }
     public ColorPair Selection   { get; set; }
     public ColorPair LineNumber  { get; set; }
@@ -87,71 +101,115 @@ public sealed class UserTheme : IColorTheme
     public ColorPair Dialog      { get; set; }
     public ColorPair SearchMatch { get; set; }
 
-    // Token colors stored per-type
     private Dictionary<TokenType, ColorPair> _tokens;
     public ColorPair ForToken(TokenType type)
         => _tokens.TryGetValue(type, out var p) ? p : Normal;
 
-    // Construct from DefaultDarkTheme values (used as defaults)
-    public static UserTheme FromDefaults() => new(new DefaultDarkTheme());
-    public UserTheme(IColorTheme source); // copies all values
+    public static UserTheme FromDefaults(string name = "VS Code Dark+");
+    public UserTheme Clone(string? newName = null);   // deep copy, optionally renamed
+    public UserTheme(IColorTheme source, string name); // copy constructor
 }
+```
+
+### `ThemeService`
+
+```csharp
+public sealed class ThemeService(ILogger<ThemeService> logger, string? themesDir = null)
+{
+    // Returns all themes from the themes directory.
+    // Seeds the directory with the built-in theme if empty.
+    public IReadOnlyList<UserTheme> LoadAll();
+
+    // Loads a single theme by name (matched on "name" field).
+    // Returns null if not found.
+    public UserTheme? LoadByName(string name);
+
+    // Saves (or overwrites) a theme. File name derived from theme.Name.
+    public void Save(UserTheme theme);
+
+    // Deletes a theme file by name. No-op if not found.
+    public void Delete(string name);
+
+    // Exports a theme to an arbitrary path.
+    public void Export(UserTheme theme, string destinationPath);
+
+    // Imports a theme file from an arbitrary path into the themes directory.
+    // Returns the imported theme, or throws ThemeImportException if invalid.
+    public UserTheme Import(string sourcePath);
+}
+```
+
+`themesDir` defaults to `~/.code-edit/themes/`. Test-isolation pattern matches existing services.
+
+### `ThemeRegistry` addition
+
+```csharp
+public void SetTheme(IColorTheme theme);  // replaces Active, fires ThemeChanged
 ```
 
 ### `ThemeEditorDialog`
 
-```csharp
-public sealed class ThemeEditorDialog : Dialog
-{
-    public ThemeEditorDialog(ThemeRegistry themeRegistry, ThemeService themeService);
-}
-```
-
-Layout (80×24 dialog):
+Opens as an 80×24 modal dialog.
 
 ```
-┌─ Theme Editor ─────────────────────────────────────────────────────┐
-│ Role              Foreground        Background                      │
-│ ──────────────────────────────────────────────────────────────────  │
-│ Normal            ██ #D4D4D4        ██ #1E1E1E                     │
-│ Selection         ██ #FFFFFF        ██ #264F78                      │
-│ Line Number       ██ #858585        ██ #1E1E1E                      │
-│ ...                                                                  │
-│ ──────────────────────────────────────────────────────────────────  │
-│ ┌─ Edit: Normal › Foreground ─────────────────────────────────────┐ │
-│ │  R [ 212 ]   G [ 212 ]   B [ 212 ]   Preview: ████████          │ │
-│ └─────────────────────────────────────────────────────────────────┘ │
-│                                                                      │
-│              [ Reset to Defaults ]  [ Cancel ]  [ Save ]            │
-└──────────────────────────────────────────────────────────────────────┘
+┌─ Theme Editor ──────────────────────────────────────────────────────────┐
+│ Themes                    │ Role              Fg            Bg           │
+│ ─────────────────────     │ ────────────────────────────────────────     │
+│ ● VS Code Dark+           │ Normal            ██ #D4D4D4    ██ #1E1E1E  │
+│   My Custom Theme         │ Selection         ██ #FFFFFF    ██ #264F78  │
+│   Solarized Dark          │ Line Number       ██ #858585    ██ #1E1E1E  │
+│                           │ Status Bar        ██ #FFFFFF    ██ #007ACC  │
+│                           │ Menu Bar          ██ #FFFFFF    ██ #007ACC  │
+│ [ New ] [ Dupe ] [ Del ]  │ Tab Bar           ██ #D4D4D4    ██ #2D2D2D  │
+│ [ Import ] [ Export ]     │ File Tree         ██ #D4D4D4    ██ #252526  │
+│                           │ ── Tokens ──────────────────────────────    │
+│                           │ Keyword           ██ #569CD6    ██ #1E1E1E  │
+│                           │ ...                                          │
+│                           ├─────────────────────────────────────────────│
+│                           │ R [ 212 ]  G [ 212 ]  B [ 212 ]  ████████   │
+└───────────────────────────┴────────────[ Revert ]  [ Cancel ]  [ Save ]─┘
 ```
 
-- The scrollable list uses `ListView`; each row displays the role name + two colored `Label` swatches (`██`)
-- Selecting a row and pressing Enter (or clicking a swatch) opens the inline RGB editor panel at the bottom of the dialog
-- The RGB editor shows three `TextField` inputs (0–255), validated on change; the preview swatch updates live
-- Every valid change immediately calls `themeRegistry.SetTheme(workingCopy)` so the rest of the app redraws in real time — the working copy is a `UserTheme` cloned from the current theme at dialog open
-- **Save**: writes working copy to disk via `ThemeService.Save()`, leaves it active
-- **Cancel**: restores the original theme (`themeRegistry.SetTheme(original)`) without saving
-- **Reset to Defaults**: replaces working copy with `UserTheme.FromDefaults()`, applies live, does not auto-save
+- **Left panel**: scrollable list of theme names; `●` marks the active theme; `[ New ]`, `[ Dupe ]`, `[ Del ]`, `[ Import ]`, `[ Export ]` buttons below
+- **Right panel**: scrollable role list; selecting a swatch (Tab/Enter or click) opens the inline RGB editor at the bottom
+- **Live preview**: every valid RGB change immediately calls `themeRegistry.SetTheme(workingCopy)`; the editor behind the dialog redraws in real time
+- **New**: prompts for a name, creates a clone of the currently selected theme
+- **Dupe**: clones selected theme, prompts for a new name
+- **Del**: disabled for the built-in theme; prompts for confirmation otherwise
+- **Import**: opens a file-picker dialog; on success adds the theme to the list and selects it
+- **Export**: opens a save dialog pre-filled with the theme's slug filename
+- **Save**: saves the working copy to disk; updates `settings.json` `activeTheme` if the saved theme is the active one
+- **Revert**: discards unsaved edits to the selected theme, restores from disk (or built-in defaults); re-applies to registry
+- **Cancel**: restores the original theme that was active when the dialog opened; no disk writes
 
-### `ThemeRegistry` changes
+### Name validation and slug generation
 
-```csharp
-public void SetTheme(IColorTheme theme); // replaces Active and fires ThemeChanged
-```
-
-`ThemeChanged` is already defined; `SetTheme` is the missing mutator.
+- Theme names must be non-empty and unique (case-insensitive among loaded themes).
+- Slug: lowercase, spaces → hyphens, strip non-alphanumeric except hyphens. E.g. `"My Theme!"` → `my-theme.json`.
+- Import: if a name collision exists, the import is rejected with an error message offering the user the option to rename before importing.
 
 ### `AppBootstrap` integration
 
-- Register `ThemeService` in DI.
-- On launch: call `themeService.Load()` and pass result to `ThemeRegistry` via `SetTheme()` before the window opens.
-- Add View menu item: `View > Edit Theme…` opens `ThemeEditorDialog`.
+- Register `ThemeService` in DI (after `app.Init()`).
+- On launch: call `themeService.LoadAll()` to seed the directory; then `themeService.LoadByName(editorSettings.ActiveTheme)` and apply via `themeRegistry.SetTheme()` if found.
+- View menu: `View > Edit Theme…` → opens `ThemeEditorDialog`.
 
 ### Tests
 
-- `ThemeService`: load returns `DefaultDarkTheme` when file absent; save/load round-trips all roles; malformed JSON falls back to defaults; `settingsDir` isolation.
-- `UserTheme`: `FromDefaults()` matches `DefaultDarkTheme` values; copy constructor copies all fields; `ForToken` falls back to Normal for unknown type.
+**`ThemeService`**
+- `LoadAll` seeds built-in theme when directory is empty.
+- `Save` / `LoadByName` round-trips all color roles and name.
+- `Delete` removes the file; subsequent `LoadByName` returns null.
+- `Export` writes a valid theme file to the given path.
+- `Import` loads a valid file and adds it to the themes directory.
+- `Import` throws `ThemeImportException` on malformed JSON.
+- `themesDir` isolation (temp directory).
+
+**`UserTheme`**
+- `FromDefaults()` matches `DefaultDarkTheme` values for all roles.
+- `Clone()` produces a deep copy; modifying the clone does not affect the original.
+- `ForToken` falls back to `Normal` for an unrecognised token type.
+- Copy constructor copies all fields.
 
 ## Open Questions
 None.
