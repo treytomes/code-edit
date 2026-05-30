@@ -64,6 +64,7 @@ public sealed class EditorView : View
     public event EventHandler? NextTabRequested;
     public event EventHandler? PrevTabRequested;
     public event EventHandler? CloseTabRequested;
+    public event EventHandler? FileTreeToggleRequested;
 
     public EditorView(
         IEventBus         eventBus,
@@ -399,6 +400,12 @@ public sealed class EditorView : View
         if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.W))
         {
             CloseTabRequested?.Invoke(this, EventArgs.Empty);
+            key.Handled = true;
+            return true;
+        }
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.B))
+        {
+            FileTreeToggleRequested?.Invoke(this, EventArgs.Empty);
             key.Handled = true;
             return true;
         }

@@ -10,6 +10,8 @@ public interface IColorTheme
     ColorPair LineNumber { get; }
     ColorPair StatusBar { get; }
     ColorPair MenuBar { get; }
+    ColorPair TabBar { get; }
+    ColorPair FileTree { get; }
     ColorPair Dialog { get; }
     ColorPair SearchMatch { get; }
 }

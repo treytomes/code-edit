@@ -1,7 +1,7 @@
 # Spec: File Tree Panel
 
 ## Status
-Draft
+Implemented
 
 ## Overview
 A toggleable left-side panel showing the directory tree of the working folder. The user can navigate and open files from the tree; opening a file adds it as a new tab. File > Open is split into "Open File" and "Open Folder", and the recent items list tracks both files and folders. Prerequisite: `tabs-ui.md`.
@@ -82,7 +82,7 @@ private sealed record TreeEntry(string Path, string Name, bool IsDirectory, int 
 | F5 | Refresh tree |
 | Escape | Return focus to EditorView |
 
-Ctrl+B (handled in `EditorView.OnKeyDown`) toggles visibility and moves focus.
+Ctrl+B is handled in `EditorView.OnKeyDown`, which fires a `FileTreeToggleRequested` event. `AppBootstrap` subscribes and calls `SetTreeVisible(!fileTree.Visible)`, then moves focus to the tree (if now visible) or back to `EditorView` (if now hidden).
 
 ### Auto-hide
 
@@ -126,7 +126,18 @@ File
 
 ### Recent items list
 
-`RecentFilesService` is extended to store a `kind` field per entry (`"file"` or `"folder"`). The recent items submenu renders them with a visual prefix:
+`RecentFilesService` is extended to store entries as `RecentEntry` records carrying both path and kind:
+
+```csharp
+public enum RecentKind { File, Folder }
+
+public sealed record RecentEntry(string Path, RecentKind Kind);
+```
+
+`RecentFilesService.Load()` returns `IReadOnlyList<RecentEntry>` (previously `IReadOnlyList<string>`).
+`RecentFilesService.Add(string path, RecentKind kind)` — replaces the existing `Add(string path)` overload.
+
+The recent items submenu renders entries with emoji prefixes:
 
 ```
 Open Recent
@@ -137,10 +148,11 @@ Open Recent
   Clear Recent Items
 ```
 
-Since Terminal.Gui renders in a 16-color terminal, emoji may not display. The prefix falls back to `[F] ` for folders and `[f] ` for files if needed. (Implementation should detect terminal capability or simply use text prefixes for safety.)
+`📄` for files, `📁` for folders. No fallback — emoji is required.
 
-`RecentFilesService.Add(string path, RecentKind kind)` — `kind` is `File` or `Folder`.
 Selecting a recent folder calls `DoOpenFolder(path)` directly (no dialog).
+
+All existing callers of `RecentFilesService.Add(string)` are updated to pass `RecentKind.File`. All callers of `Load()` are updated to use `RecentEntry`.
 
 ### Layout integration
 

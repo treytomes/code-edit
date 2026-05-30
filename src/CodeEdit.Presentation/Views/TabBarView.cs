@@ -49,7 +49,7 @@ public sealed class TabBarView : View
         if (_tabs.Count == 0) return false;
 
         var theme    = _themeRegistry.Active;
-        var normal   = ColorPairMapper.ToAttribute(theme.Normal);
+        var normal   = ColorPairMapper.ToAttribute(theme.TabBar);
         var active   = ColorPairMapper.ToAttribute(theme.Selection);
         var width    = Viewport.Width;
         var col      = 0;
@@ -68,8 +68,7 @@ public sealed class TabBarView : View
         // Tabs
         for (var i = _scrollOffset; i < _tabs.Count; i++)
         {
-            var title = TabTitle(_tabs[i]);
-            var label = $"[ {title} ]";
+            var label    = TabLabel(_tabs[i]);
             var isActive = i == _activeIndex;
 
             if (col + label.Length > rightMax) break;
@@ -136,10 +135,16 @@ public sealed class TabBarView : View
         var cursor = hasLeft ? 1 : 0;
         for (var i = _scrollOffset; i < _tabs.Count; i++)
         {
-            var label = $"[ {TabTitle(_tabs[i])} ]";
+            var label = TabLabel(_tabs[i]);
             if (col >= cursor && col < cursor + label.Length)
             {
-                TabActivated?.Invoke(this, i);
+                // The × is the third-to-last character: "[ title × ]"
+                //                                                ^  col = cursor + label.Length - 3
+                var closeCol = cursor + label.Length - 3;
+                if (col == closeCol)
+                    TabCloseRequested?.Invoke(this, i);
+                else
+                    TabActivated?.Invoke(this, i);
                 return true;
             }
             cursor += label.Length + 1;
@@ -151,12 +156,13 @@ public sealed class TabBarView : View
 
     // ── Helpers ────────────────────────────────────────────────────────────
 
-    private static string TabTitle(TabEntry tab)
+    private static string TabLabel(TabEntry tab)
     {
         var name = tab.Buffer.FilePath is null
             ? "Untitled"
             : Path.GetFileName(tab.Buffer.FilePath);
-        return tab.Buffer.IsDirty ? $"*{name}" : name!;
+        var title = tab.Buffer.IsDirty ? $"*{name}" : name!;
+        return $"[ {title} × ]";
     }
 
     private void EnsureActiveVisible()
@@ -173,7 +179,7 @@ public sealed class TabBarView : View
 
         for (var i = _scrollOffset; i < _tabs.Count; i++)
         {
-            var len = $"[ {TabTitle(_tabs[i])} ]".Length + 1;
+            var len = TabLabel(_tabs[i]).Length + 1;
             if (i == _activeIndex && col + len > width - 1)
             {
                 _scrollOffset++;
@@ -190,7 +196,7 @@ public sealed class TabBarView : View
         var col = usedCols;
         for (var i = _scrollOffset; i < _tabs.Count; i++)
         {
-            var len = $"[ {TabTitle(_tabs[i])} ]".Length + 1;
+            var len = TabLabel(_tabs[i]).Length + 1;
             if (col + len > rightMax) return true;
             col += len;
         }
@@ -204,7 +210,7 @@ public sealed class TabBarView : View
         var width   = Viewport.Width;
         for (var i = _scrollOffset; i < _tabs.Count; i++)
         {
-            var len = $"[ {TabTitle(_tabs[i])} ]".Length + 1;
+            var len = TabLabel(_tabs[i]).Length + 1;
             if (col + len > width - 1) break;
             col += len;
         }

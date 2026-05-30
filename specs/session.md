@@ -1,7 +1,7 @@
 # Spec: Session Persistence
 
 ## Status
-Approved
+Implemented
 
 ## Overview
 Persist the list of open files and the active tab index to `.code-edit/session.json` in the working directory. On next launch, restore those tabs automatically. Prerequisite: `buffer-manager.md`.
@@ -37,14 +37,16 @@ The `.code-edit/` directory is created if it doesn't exist.
 ```csharp
 public sealed record SessionData(
     IReadOnlyList<string> OpenFiles,   // absolute paths; Untitled buffers omitted
-    int ActiveIndex);                  // index into OpenFiles; clamped to valid range on load
+    int ActiveIndex,                   // index into OpenFiles; clamped to valid range on load
+    string? RootDir = null);           // working directory root; null means use default
 ```
 
 JSON representation:
 ```json
 {
   "openFiles": ["/home/trey/project/src/Program.cs", "/home/trey/project/README.md"],
-  "activeIndex": 0
+  "activeIndex": 0,
+  "rootDir": "/home/trey/project"
 }
 ```
 
@@ -70,7 +72,7 @@ public sealed class SessionService(ILogger<SessionService> logger, string? worki
 3. If at least one file was successfully restored, close the placeholder `EmptyBuffer` at index 0. This must happen *after* step 2 — `BufferManager.Close` throws if it is the last tab, so the placeholder can only be removed once there is at least one other tab.
 4. Activate the saved `ActiveIndex`, clamped to `[0, restoredCount - 1]` where `restoredCount` is the number of files actually opened in step 2 (not `OpenFiles.Count`, which may be larger if some files were skipped).
 
-**On change**: subscribe to `BufferManager.TabsChanged` and `BufferManager.ActiveTabChanged`; call `sessionService.Save(BuildSessionData())` in both handlers.
+**On change**: subscribe to `BufferManager.TabsChanged` and `BufferManager.ActiveTabChanged`; call `sessionService.Save(BuildSessionData())` in both handlers. Also save whenever the root directory changes (Open Folder).
 
 ```csharp
 SessionData BuildSessionData() => new(
@@ -78,12 +80,13 @@ SessionData BuildSessionData() => new(
         .Select(t => t.Buffer.FilePath)
         .Where(p => p is not null)
         .ToList()!,
-    eventBus.Buffers.ActiveIndex);
+    eventBus.Buffers.ActiveIndex,
+    _rootDir);   // current working directory root tracked in AppBootstrap
 ```
 
 ### Tests
 
-- Save and reload round-trips correctly.
+- Save and reload round-trips correctly (including `RootDir`).
 - Missing files on restore are skipped without error.
 - Malformed JSON returns empty `SessionData`.
 - `ActiveIndex` is clamped to the number of successfully restored files, not the raw saved value.

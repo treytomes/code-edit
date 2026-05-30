@@ -42,7 +42,7 @@ public sealed class TabBarView : View
 }
 ```
 
-**Rendering**: each tab is drawn as `[ {title} ]` with one space of padding between tabs. The active tab uses the Selection color pair; others use Normal. When tabs extend beyond the viewport, `◀` and `▶` scroll indicators appear at the left and right edges respectively. `_scrollOffset` (number of tabs scrolled off the left) is adjusted so the active tab is always visible.
+**Rendering**: each tab is drawn as `[ {title} × ]` with one space of padding between tabs. The `×` is the close button; clicking it fires `TabCloseRequested` with the tab index. The active tab uses the Selection color pair; others use Normal. When tabs extend beyond the viewport, `◀` and `▶` scroll indicators appear at the left and right edges respectively. `_scrollOffset` (number of tabs scrolled off the left) is adjusted so the active tab is always visible.
 
 **Dirty indicator**: `TabBarView` subscribes to no events directly. `AppBootstrap` calls `tabBar.Refresh(...)` in response to `eventBus.BufferChanged` and `eventBus.EventExecuted` (to catch the dirty-flag change).
 
@@ -119,10 +119,10 @@ View
 
 ```
  File  Edit  Search  View  Help
-[ Untitled ]  [ *Program.cs ]  [ README.md ]  [ appsettings.json ]  ▶
+[ Untitled × ]  [ *Program.cs × ]  [ README.md × ]  [ appsettings.json × ]  ▶
 ```
 
-Active tab highlighted. `*` prefix on dirty. `▶` when more tabs are off-screen to the right; `◀` when scrolled right.
+Active tab highlighted. `*` prefix on dirty. `×` is the per-tab close button. `▶` when more tabs are off-screen to the right; `◀` when scrolled right.
 
 ### Close with unsaved changes
 

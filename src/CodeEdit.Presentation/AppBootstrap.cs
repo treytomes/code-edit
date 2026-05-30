@@ -11,6 +11,8 @@ using CodeEdit.Infrastructure.Theme;
 using CodeEdit.Presentation.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Terminal.Gui.Drivers;
+using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 using TGuiApp = Terminal.Gui.App.Application;
@@ -19,6 +21,9 @@ namespace CodeEdit.Presentation;
 
 public static class AppBootstrap
 {
+    private const int TreeWidth      = 30;
+    private const int MinEditorWidth = 30;
+
     public static void Run()
     {
         var logDir = Path.Combine(
@@ -62,44 +67,125 @@ public static class AppBootstrap
         var editorSettings = provider.GetRequiredService<SettingsService>().Load();
         services.AddSingleton(editorSettings);
         services.AddSingleton<RecentFilesService>();
+        services.AddSingleton<SessionService>();
         services.AddSingleton<EditorView>();
         services.AddSingleton<SearchBarView>();
         services.AddSingleton<TabBarView>();
+        services.AddSingleton<FileTreeView>();
         provider = services.BuildServiceProvider();
 
         try
         {
-            var editorView   = provider.GetRequiredService<EditorView>();
-            var statusBar    = provider.GetRequiredService<StatusBarView>();
-            var searchBar    = provider.GetRequiredService<SearchBarView>();
-            var tabBar       = provider.GetRequiredService<TabBarView>();
-            var eventBus     = provider.GetRequiredService<IEventBus>();
-            var fileService  = provider.GetRequiredService<IFileService>();
-            var recentFiles  = provider.GetRequiredService<RecentFilesService>();
+            var editorView    = provider.GetRequiredService<EditorView>();
+            var statusBar     = provider.GetRequiredService<StatusBarView>();
+            var searchBar     = provider.GetRequiredService<SearchBarView>();
+            var tabBar        = provider.GetRequiredService<TabBarView>();
+            var fileTree      = provider.GetRequiredService<FileTreeView>();
+            var eventBus      = provider.GetRequiredService<IEventBus>();
+            var fileService   = provider.GetRequiredService<IFileService>();
+            var recentFiles   = provider.GetRequiredService<RecentFilesService>();
+            var sessionSvc    = provider.GetRequiredService<SessionService>();
 
-            // Open file from command line or start with an empty buffer
-            IMutableTextBuffer buffer;
+            // ── Working directory root ─────────────────────────────────────
+
+            string rootDir;
             var cmdArgs = Environment.GetCommandLineArgs();
+
             if (cmdArgs.Length > 1 && !string.IsNullOrWhiteSpace(cmdArgs[1]))
             {
-                buffer = (IMutableTextBuffer)fileService.Open(cmdArgs[1]);
-                recentFiles.Add(cmdArgs[1]);
-                logger.LogInformation("Opened file: {Path}", cmdArgs[1]);
+                var cmdPath = cmdArgs[1];
+                rootDir = Directory.Exists(cmdPath)
+                    ? cmdPath
+                    : Path.GetDirectoryName(Path.GetFullPath(cmdPath)) ?? Environment.CurrentDirectory;
+
+                var buf = (IMutableTextBuffer)fileService.Open(cmdPath);
+                recentFiles.Add(cmdPath, RecentKind.File);
+                logger.LogInformation("Opened file: {Path}", cmdPath);
+                eventBus.Buffers.Add(buf);
             }
             else
             {
-                buffer = new EmptyBuffer();
+                // Start with placeholder; session restore may replace it below
+                eventBus.Buffers.Add(new EmptyBuffer());
+
+                var session       = sessionSvc.Load();
+                rootDir           = session.RootDir ?? Environment.CurrentDirectory;
+                var restoredCount = 0;
+
+                foreach (var path in session.OpenFiles)
+                {
+                    if (!File.Exists(path)) continue;
+                    try
+                    {
+                        var restored = (IMutableTextBuffer)fileService.Open(path);
+                        eventBus.Buffers.Add(restored);
+                        restoredCount++;
+                    }
+                    catch (FileServiceException ex)
+                    {
+                        logger.LogWarning(ex, "Session restore: failed to open {Path}", path);
+                    }
+                }
+
+                if (restoredCount > 0)
+                {
+                    eventBus.Buffers.Close(0);
+                    var clampedIndex = Math.Clamp(session.ActiveIndex, 0, restoredCount - 1);
+                    eventBus.Buffers.Activate(clampedIndex);
+                }
             }
 
-            eventBus.Buffers.Add(buffer);
-            editorView.SetBuffer(buffer);
+            fileTree.Populate(rootDir);
+            editorView.SetBuffer(eventBus.Buffers.ActiveBuffer);
             tabBar.Refresh(eventBus.Buffers.Tabs, eventBus.Buffers.ActiveIndex);
+
+            // ── Layout helpers ─────────────────────────────────────────────
+
+            var currentBarH    = 0;
+            var treeUserVisible = true;
+
+            void UpdateEditorLayout()
+            {
+                var tabH  = tabBar.Visible ? 1 : 0;
+                var treeW = fileTree.Visible ? TreeWidth : 0;
+                fileTree.Height   = Dim.Fill() - Dim.Absolute(tabH + 1 + currentBarH);
+                editorView.X      = Pos.Absolute(treeW);
+                editorView.Width  = Dim.Fill();   // Fill from X, which already accounts for tree width
+                editorView.Height = Dim.Fill() - Dim.Absolute(tabH + 1 + currentBarH);
+                searchBar.Y       = Pos.AnchorEnd(1 + currentBarH);
+                searchBar.Height  = Dim.Absolute(currentBarH);
+            }
+
+            void SetTreeVisible(bool visible)
+            {
+                fileTree.Visible = visible;
+                fileTree.Width   = Dim.Absolute(visible ? TreeWidth : 0);
+                UpdateEditorLayout();
+            }
 
             void RefreshTabBar()
                 => tabBar.Refresh(eventBus.Buffers.Tabs, eventBus.Buffers.ActiveIndex);
 
-            eventBus.BufferChanged  += (_, _) => { editorView.SetBuffer(eventBus.Buffers.ActiveBuffer); RefreshTabBar(); };
-            eventBus.EventExecuted  += (_, _) => RefreshTabBar();
+            SessionData BuildSessionData() => new(
+                eventBus.Buffers.Tabs
+                    .Select(t => t.Buffer.FilePath)
+                    .Where(p => p is not null)
+                    .ToList()!,
+                eventBus.Buffers.ActiveIndex,
+                rootDir);
+
+            void SaveSession() => sessionSvc.Save(BuildSessionData());
+
+            eventBus.BufferChanged += (_, _) =>
+            {
+                editorView.SetBuffer(eventBus.Buffers.ActiveBuffer);
+                RefreshTabBar();
+                searchBar.ClearSearch();
+            };
+            eventBus.EventExecuted += (_, _) => RefreshTabBar();
+
+            eventBus.Buffers.TabsChanged      += (_, _) => SaveSession();
+            eventBus.Buffers.ActiveTabChanged += (_, _) => SaveSession();
 
             // ── File helpers ───────────────────────────────────────────────
 
@@ -129,14 +215,8 @@ public static class AppBootstrap
                 app.RequestStop();
             }
 
-            void DoOpen()
+            void DoOpenFile()
             {
-                if (eventBus.Buffer.IsDirty)
-                {
-                    var choice = MessageBox.Query(app, "Unsaved Changes", "You have unsaved changes.\nOpen a new file anyway?", "Yes", "No");
-                    if (choice != 0) return;
-                }
-
                 var dlg = new OpenDialog { MustExist = true, OpenMode = Terminal.Gui.Views.OpenMode.File };
                 app.Run(dlg);
 
@@ -146,12 +226,33 @@ public static class AppBootstrap
                 try
                 {
                     SetActiveBuffer((IMutableTextBuffer)fileService.Open(path));
-                    recentFiles.Add(path);
+                    recentFiles.Add(path, RecentKind.File);
                 }
                 catch (FileServiceException ex)
                 {
                     statusBar.SetMessage(ex.Message);
                 }
+            }
+
+            void DoOpenFolder(string? overridePath = null)
+            {
+                string folderPath;
+                if (overridePath is not null)
+                {
+                    folderPath = overridePath;
+                }
+                else
+                {
+                    var dlg = new OpenDialog { MustExist = true, OpenMode = Terminal.Gui.Views.OpenMode.Directory };
+                    app.Run(dlg);
+                    if (dlg.Canceled || dlg.FilePaths.Count == 0) return;
+                    folderPath = dlg.FilePaths[0].ToString()!;
+                }
+
+                rootDir = folderPath;
+                fileTree.Populate(folderPath);
+                recentFiles.Add(folderPath, RecentKind.Folder);
+                SaveSession();
             }
 
             void DoSave()
@@ -165,7 +266,7 @@ public static class AppBootstrap
                 try
                 {
                     fileService.Save(buf);
-                    recentFiles.Add(buf.FilePath!);
+                    recentFiles.Add(buf.FilePath!, RecentKind.File);
                     statusBar.SetNeedsDraw();
                     editorView.SetNeedsDraw();
                 }
@@ -187,7 +288,7 @@ public static class AppBootstrap
                 {
                     var saved = (IMutableTextBuffer)fileService.SaveAs(eventBus.Buffer, path);
                     SetActiveBuffer(saved);
-                    recentFiles.Add(path);
+                    recentFiles.Add(path, RecentKind.File);
                 }
                 catch (FileServiceException ex)
                 {
@@ -221,7 +322,7 @@ public static class AppBootstrap
             }
 
             editorView.NewRequested  += (_, _) => DoNew();
-            editorView.OpenRequested += (_, _) => DoOpen();
+            editorView.OpenRequested += (_, _) => DoOpenFile();
             editorView.SaveRequested += (_, _) => DoSave();
 
             // ── Search bar wiring ──────────────────────────────────────────
@@ -231,10 +332,8 @@ public static class AppBootstrap
 
             searchBar.BarHeightChanged += (_, barH) =>
             {
-                var tabH = tabBar.Visible ? 1 : 0;
-                editorView.Height = Dim.Fill() - Dim.Absolute(tabH + 1 + barH);
-                searchBar.Y       = Pos.AnchorEnd(1 + barH);
-                searchBar.Height  = Dim.Absolute(barH);
+                currentBarH = barH;
+                UpdateEditorLayout();
             };
 
             editorView.FindNextRequested += (_, _) =>
@@ -255,7 +354,7 @@ public static class AppBootstrap
 
             // ── Tab wiring ─────────────────────────────────────────────────
 
-            tabBar.TabActivated     += (_, i) => eventBus.Buffers.Activate(i);
+            tabBar.TabActivated      += (_, i) => eventBus.Buffers.Activate(i);
             tabBar.TabCloseRequested += (_, i) => DoCloseTab(i);
 
             editorView.NextTabRequested  += (_, _) =>
@@ -272,7 +371,7 @@ public static class AppBootstrap
 
             void DoCloseTab(int index)
             {
-                var buf  = eventBus.Buffers.Tabs[index].Buffer;
+                var buf = eventBus.Buffers.Tabs[index].Buffer;
                 if (buf.IsDirty)
                 {
                     var name   = buf.FilePath is null ? "Untitled" : Path.GetFileName(buf.FilePath);
@@ -286,34 +385,79 @@ public static class AppBootstrap
                 RefreshTabBar();
             }
 
-            // ── View menu ──────────────────────────────────────────────────
+            // ── File tree wiring ───────────────────────────────────────────
 
-            var wrapItem    = new MenuItem("  _Word Wrap", "Alt+Z", () => editorView.ToggleWordWrap());
-            editorView.WordWrapChanged += (_, _) =>
-                wrapItem.Title = (editorView.WordWrap ? "✓ " : "  ") + "_Word Wrap";
-
-            var tabBarItem  = new MenuItem("✓ _Tab Bar", "", () => tabBar.Toggle());
-            tabBar.VisibilityChanged += (_, h) =>
+            fileTree.FileOpenRequested += (_, path) =>
             {
-                tabBarItem.Title  = (h > 0 ? "✓ " : "  ") + "_Tab Bar";
-                // tabBar.Height is already updated; Pos.Bottom(tabBar) tracks it automatically
-                editorView.Height = Dim.Fill() - Dim.Absolute(1 + h);
-            };
-
-            // ── Recent files helpers ───────────────────────────────────────
-
-            void DoOpenRecent(string path)
-            {
-                if (eventBus.Buffer.IsDirty)
-                {
-                    var choice = MessageBox.Query(app, "Unsaved Changes",
-                        "You have unsaved changes.\nOpen a new file anyway?", "Yes", "No");
-                    if (choice != 0) return;
-                }
                 try
                 {
                     SetActiveBuffer((IMutableTextBuffer)fileService.Open(path));
-                    recentFiles.Add(path);
+                    recentFiles.Add(path, RecentKind.File);
+                    editorView.SetFocus();
+                }
+                catch (FileServiceException ex)
+                {
+                    statusBar.SetMessage(ex.Message);
+                }
+            };
+
+            editorView.FileTreeToggleRequested += (_, _) =>
+            {
+                treeUserVisible = !treeUserVisible;
+                // Only show if terminal is wide enough
+                var shouldShow = treeUserVisible
+                    && (fileTree.SuperView?.Viewport.Width ?? 0) >= TreeWidth + MinEditorWidth;
+                SetTreeVisible(shouldShow);
+                if (fileTree.Visible)
+                    fileTree.SetFocus();
+                else
+                    editorView.SetFocus();
+            };
+
+            // Escape in file tree returns focus to editor
+            fileTree.KeyDown += (_, key) =>
+            {
+                if (key.KeyCode == KeyCode.Esc)
+                {
+                    editorView.SetFocus();
+                    key.Handled = true;
+                }
+            };
+
+            // ── View menu ──────────────────────────────────────────────────
+
+            var wrapItem = new MenuItem("  _Word Wrap", "Alt+Z", () => editorView.ToggleWordWrap());
+            editorView.WordWrapChanged += (_, _) =>
+                wrapItem.Title = (editorView.WordWrap ? "✓ " : "  ") + "_Word Wrap";
+
+            var tabBarItem = new MenuItem("✓ _Tab Bar", "", () => tabBar.Toggle());
+            tabBar.VisibilityChanged += (_, h) =>
+            {
+                tabBarItem.Title = (h > 0 ? "✓ " : "  ") + "_Tab Bar";
+                UpdateEditorLayout();
+            };
+
+            var fileTreeItem = new MenuItem("✓ _File Tree", "Ctrl+B", () =>
+            {
+                treeUserVisible = !treeUserVisible;
+                SetTreeVisible(treeUserVisible);
+                if (fileTree.Visible) fileTree.SetFocus();
+                else                  editorView.SetFocus();
+            });
+            // Keep checkmark in sync with actual visibility
+            fileTree.VisibleChanged += (_, _) =>
+                fileTreeItem.Title = (fileTree.Visible ? "✓ " : "  ") + "_File Tree";
+
+            // ── Auto-hide on resize ────────────────────────────────────────
+
+            // ── Recent files helpers ───────────────────────────────────────
+
+            void DoOpenRecentFile(string path)
+            {
+                try
+                {
+                    SetActiveBuffer((IMutableTextBuffer)fileService.Open(path));
+                    recentFiles.Add(path, RecentKind.File);
                 }
                 catch (FileServiceException ex)
                 {
@@ -323,8 +467,8 @@ public static class AppBootstrap
 
             Menu BuildRecentMenu()
             {
-                var paths = recentFiles.Load();
-                if (paths.Count == 0)
+                var entries = recentFiles.Load();
+                if (entries.Count == 0)
                 {
                     var empty = new MenuItem("(empty)", "", null);
                     empty.Enabled = false;
@@ -333,21 +477,25 @@ public static class AppBootstrap
 
                 var items = new List<MenuItem>();
                 var home  = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-                foreach (var p in paths)
+                foreach (var entry in entries)
                 {
-                    var captured = p;
-                    var display  = captured.StartsWith(home)
-                        ? "~" + captured[home.Length..]
-                        : captured;
-                    items.Add(new MenuItem(display, "", () => DoOpenRecent(captured)));
+                    var captured    = entry;
+                    var displayPath = captured.Path.StartsWith(home)
+                        ? "~" + captured.Path[home.Length..]
+                        : captured.Path;
+                    var prefix  = captured.Kind == RecentKind.Folder ? "📁 " : "📄 ";
+                    var display = prefix + displayPath;
+                    if (captured.Kind == RecentKind.Folder)
+                        items.Add(new MenuItem(display, "", () => DoOpenFolder(captured.Path)));
+                    else
+                        items.Add(new MenuItem(display, "", () => DoOpenRecentFile(captured.Path)));
                 }
                 items.Add(null!);
-                items.Add(new MenuItem("_Clear Recent Files", "", () => recentFiles.Clear()));
+                items.Add(new MenuItem("_Clear Recent Items", "", () => recentFiles.Clear()));
                 return new Menu(items);
             }
 
             var recentItem = new MenuItem("Open _Recent", "", BuildRecentMenu());
-            // Rebuild the submenu each time it is about to open
             recentItem.Accepting += (_, _) => recentItem.SubMenu = BuildRecentMenu();
 
             var undoItem = new MenuItem("_Undo", "Ctrl+Z", DoUndo);
@@ -395,6 +543,7 @@ public static class AppBootstrap
                 "  Ctrl+Home/End   Document start / end\n" +
                 "\n" +
                 "VIEW\n" +
+                "  Ctrl+B          Toggle file tree\n" +
                 "  Alt+Z           Toggle word wrap\n";
 
             void DoKeyboardShortcuts()
@@ -414,7 +563,7 @@ public static class AppBootstrap
                 {
                     Title  = "Keyboard Shortcuts",
                     Width  = 60,
-                    Height = 22,
+                    Height = 24,
                 };
                 var ok = new Button { Text = "OK", IsDefault = true };
                 ok.Accepting += (_, _) => app.RequestStop(dlg);
@@ -439,14 +588,15 @@ public static class AppBootstrap
             [
                 new MenuBarItem("_File",
                 [
-                    new MenuItem("_New",      "Ctrl+N", DoNew),
-                    new MenuItem("_Open…",    "Ctrl+O", DoOpen),
+                    new MenuItem("_New",           "Ctrl+N", DoNew),
+                    new MenuItem("Open _File…",    "Ctrl+O", DoOpenFile),
+                    new MenuItem("Open F_older…",  "",       () => DoOpenFolder()),
                     recentItem,
                     null!,
-                    new MenuItem("_Save",     "Ctrl+S", DoSave),
-                    new MenuItem("Save _As…", "",       DoSaveAs),
+                    new MenuItem("_Save",          "Ctrl+S", DoSave),
+                    new MenuItem("Save _As…",      "",       DoSaveAs),
                     null!,
-                    new MenuItem("E_xit", "", DoQuit),
+                    new MenuItem("E_xit",          "",       DoQuit),
                 ]),
                 new MenuBarItem("_Edit",
                 [
@@ -459,25 +609,26 @@ public static class AppBootstrap
                 ]),
                 new MenuBarItem("_Search",
                 [
-                    new MenuItem("_Find",            "Ctrl+F", () => searchBar.Open(SearchBarView.Mode.Find)),
-                    new MenuItem("Find _Next",        "F3",       () =>
+                    new MenuItem("_Find",          "Ctrl+F",   () => searchBar.Open(SearchBarView.Mode.Find)),
+                    new MenuItem("Find _Next",      "F3",       () =>
                     {
                         if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
                             searchBar.Open(SearchBarView.Mode.Find, resetQuery: false);
                         else
                             searchBar.NavigateNext();
                     }),
-                    new MenuItem("Find _Previous",    "Shift+F3", () =>
+                    new MenuItem("Find _Previous",  "Shift+F3", () =>
                     {
                         if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
                             searchBar.Open(SearchBarView.Mode.Find, resetQuery: false);
                         else
                             searchBar.NavigatePrev();
                     }),
-                    new MenuItem("_Replace",          "Ctrl+H", () => searchBar.Open(SearchBarView.Mode.Replace)),
+                    new MenuItem("_Replace",        "Ctrl+H",   () => searchBar.Open(SearchBarView.Mode.Replace)),
                 ]),
                 new MenuBarItem("_View",
                 [
+                    fileTreeItem,
                     tabBarItem,
                     wrapItem,
                 ]),
@@ -495,10 +646,15 @@ public static class AppBootstrap
             tabBar.Width  = Dim.Fill();
             tabBar.Height = Dim.Absolute(1);
 
-            editorView.X      = 0;
+            fileTree.X      = 0;
+            fileTree.Y      = Pos.Bottom(tabBar);
+            fileTree.Width  = Dim.Absolute(TreeWidth);
+            fileTree.Height = Dim.Fill() - Dim.Absolute(2);
+
+            editorView.X      = Pos.Absolute(TreeWidth);
             editorView.Y      = Pos.Bottom(tabBar);
-            editorView.Width  = Dim.Fill();
-            editorView.Height = Dim.Fill() - Dim.Absolute(2);   // 1 tabBar + 1 statusBar; adjusted by events
+            editorView.Width  = Dim.Fill();   // Fill from X, which already accounts for tree width
+            editorView.Height = Dim.Fill() - Dim.Absolute(2);
 
             searchBar.X      = 0;
             searchBar.Y      = Pos.AnchorEnd(1);
@@ -511,9 +667,17 @@ public static class AppBootstrap
             statusBar.Height = Dim.Absolute(1);
 
             using var window = new Window { Title = "code-edit" };
-            window.Add(menuBar, tabBar, editorView, searchBar, statusBar);
-            editorView.SetFocus();
+            window.Add(menuBar, tabBar, fileTree, editorView, searchBar, statusBar);
 
+            // Auto-hide file tree when terminal is too narrow
+            window.FrameChanged += (_, _) =>
+            {
+                var shouldShow = treeUserVisible && window.Viewport.Width >= TreeWidth + MinEditorWidth;
+                if (shouldShow != fileTree.Visible)
+                    SetTreeVisible(shouldShow);
+            };
+
+            editorView.SetFocus();
             app.Run(window);
             logger.LogInformation("code-edit stopped");
         }

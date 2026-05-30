@@ -132,6 +132,16 @@ public sealed class SearchBarView : View
         RaiseSearchResults();
     }
 
+    // Called when the active buffer changes so stale highlights are cleared.
+    public void ClearSearch()
+    {
+        _matches      = [];
+        _currentIndex = -1;
+        RaiseSearchResults();
+        if (_mode != Mode.Closed)
+            RunSearch();
+    }
+
     public void NavigateNext()
     {
         if (string.IsNullOrEmpty(Query)) return;
