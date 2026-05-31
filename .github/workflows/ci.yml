@@ -26,7 +26,37 @@ jobs:
         run: dotnet build CodeEdit.sln --no-restore --configuration Release
 
       - name: Test
-        run: dotnet test CodeEdit.sln --no-build --configuration Release
+        run: |
+          dotnet test CodeEdit.sln --no-build --configuration Release \
+            --settings coverage.runsettings \
+            --results-directory coverage/results
+
+      - name: Install ReportGenerator
+        run: dotnet tool restore
+
+      - name: Generate coverage report
+        run: |
+          dotnet tool run reportgenerator \
+            -reports:"coverage/results/**/coverage.cobertura.xml" \
+            -targetdir:"coverage/report" \
+            -reporttypes:"Html;TextSummary;Badges;Cobertura" \
+            -title:"code-edit"
+          cat coverage/report/Summary.txt
+
+      - name: Enforce coverage threshold
+        run: |
+          LINE=$(grep "Line coverage" coverage/report/Summary.txt | grep -oP '[0-9]+(?:\.[0-9]+)?(?=%)')
+          echo "Line coverage: ${LINE}%"
+          if (( $(echo "$LINE < 75" | bc -l) )); then
+            echo "Coverage ${LINE}% is below the 75% threshold"
+            exit 1
+          fi
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/report/
 
   publish:
     name: Publish (${{ matrix.rid }})

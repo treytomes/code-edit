@@ -177,4 +177,74 @@ public sealed class GrammarSyntaxProviderTests
         var p = registry.Detect(null, "#!/usr/bin/env python3");
         Assert.Equal("python", p.LanguageId);
     }
+
+    // ── XML grammar ────────────────────────────────────────────────────────
+
+    private static GrammarSyntaxProvider BuildXml()
+    {
+        var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(_ => { });
+        var plainText     = new PlainTextSyntaxProvider();
+        var logger        = Microsoft.Extensions.Logging.LoggerFactoryExtensions
+                                .CreateLogger<GrammarRegistry>(loggerFactory);
+        var registry      = new GrammarRegistry(plainText, logger);
+        return (GrammarSyntaxProvider)registry.Detect("file.xml", null);
+    }
+
+    [Fact]
+    public void Xml_DetectedForXmlExtension()
+    {
+        var p = BuildXml();
+        Assert.Equal("xml", p.LanguageId);
+    }
+
+    [Fact]
+    public void Xml_DetectedForCsprojExtension()
+    {
+        var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(_ => { });
+        var plainText     = new PlainTextSyntaxProvider();
+        var logger        = Microsoft.Extensions.Logging.LoggerFactoryExtensions
+                                .CreateLogger<GrammarRegistry>(loggerFactory);
+        var registry      = new GrammarRegistry(plainText, logger);
+        var p = registry.Detect("MyProject.csproj", null);
+        Assert.Equal("xml", p.LanguageId);
+    }
+
+    [Fact]
+    public void Xml_CommentTokenizedAsComment()
+    {
+        var p    = BuildXml();
+        var line = "<!-- this is a comment -->";
+        var lt   = p.TokenizeLine(line, 0, 0);
+        Assert.Contains(lt.Tokens, t => t.Type == TokenType.Comment && t.StartColumn == 0 && t.Length == line.Length);
+    }
+
+    [Fact]
+    public void Xml_AttributeValueTokenizedAsStringLiteral()
+    {
+        var p    = BuildXml();
+        var line = @"<Project Sdk=""Microsoft.NET.Sdk"">";
+        var lt   = p.TokenizeLine(line, 0, 0);
+        Assert.Contains(lt.Tokens, t => t.Type == TokenType.StringLiteral);
+    }
+
+    [Fact]
+    public void Xml_AngleBracketsTokenizedAsPunctuation()
+    {
+        var p    = BuildXml();
+        var line = "<Project>";
+        var lt   = p.TokenizeLine(line, 0, 0);
+        Assert.Contains(lt.Tokens, t => t.Type == TokenType.Punctuation);
+    }
+
+    [Fact]
+    public void Xml_MultiLineCommentCarriesStateAcrossLines()
+    {
+        var p = BuildXml();
+        var lt1 = p.TokenizeLine("<!-- start", 0, 0);
+        Assert.NotEqual(0, lt1.EndState);  // inside comment
+        var lt2 = p.TokenizeLine("  still comment", 1, lt1.EndState);
+        Assert.NotEqual(0, lt2.EndState);
+        var lt3 = p.TokenizeLine("end -->", 2, lt2.EndState);
+        Assert.Equal(0, lt3.EndState);     // comment closed
+    }
 }

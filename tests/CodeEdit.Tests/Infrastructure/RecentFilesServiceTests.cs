@@ -46,56 +46,65 @@ public sealed class RecentFilesServiceTests : IDisposable
     [Fact]
     public void Add_SinglePath_IsFirstEntry()
     {
-        _svc.Add("/home/user/foo.cs");
+        _svc.Add("/home/user/foo.cs", RecentKind.File);
         var list = _svc.Load();
         Assert.Single(list);
-        Assert.Equal("/home/user/foo.cs", list[0]);
+        Assert.Equal("/home/user/foo.cs", list[0].Path);
+        Assert.Equal(RecentKind.File, list[0].Kind);
     }
 
     [Fact]
     public void Add_SecondPath_PrependsMostRecent()
     {
-        _svc.Add("/home/user/a.cs");
-        _svc.Add("/home/user/b.cs");
+        _svc.Add("/home/user/a.cs", RecentKind.File);
+        _svc.Add("/home/user/b.cs", RecentKind.File);
         var list = _svc.Load();
-        Assert.Equal("/home/user/b.cs", list[0]);
-        Assert.Equal("/home/user/a.cs", list[1]);
+        Assert.Equal("/home/user/b.cs", list[0].Path);
+        Assert.Equal("/home/user/a.cs", list[1].Path);
     }
 
     [Fact]
     public void Add_DuplicatePath_MovesToFront()
     {
-        _svc.Add("/home/user/a.cs");
-        _svc.Add("/home/user/b.cs");
-        _svc.Add("/home/user/a.cs");
+        _svc.Add("/home/user/a.cs", RecentKind.File);
+        _svc.Add("/home/user/b.cs", RecentKind.File);
+        _svc.Add("/home/user/a.cs", RecentKind.File);
         var list = _svc.Load();
         Assert.Equal(2, list.Count);
-        Assert.Equal("/home/user/a.cs", list[0]);
-        Assert.Equal("/home/user/b.cs", list[1]);
+        Assert.Equal("/home/user/a.cs", list[0].Path);
+        Assert.Equal("/home/user/b.cs", list[1].Path);
     }
 
     [Fact]
     public void Add_ExceedsMax_OldestEntryDropped()
     {
         var svc = MakeSvc(recentFilesMax: 3);
-        svc.Add("/a");
-        svc.Add("/b");
-        svc.Add("/c");
-        svc.Add("/d");
+        svc.Add("/a", RecentKind.File);
+        svc.Add("/b", RecentKind.File);
+        svc.Add("/c", RecentKind.File);
+        svc.Add("/d", RecentKind.File);
         var list = svc.Load();
         Assert.Equal(3, list.Count);
-        Assert.DoesNotContain("/a", list);
-        Assert.Equal("/d", list[0]);
+        Assert.DoesNotContain(list, e => e.Path == "/a");
+        Assert.Equal("/d", list[0].Path);
     }
 
     [Fact]
     public void Add_RelativePath_StoredAsAbsolute()
     {
-        // Path.GetFullPath will resolve relative to cwd; just verify it's absolute
-        _svc.Add("somefile.cs");
+        _svc.Add("somefile.cs", RecentKind.File);
         var list = _svc.Load();
         Assert.Single(list);
-        Assert.True(Path.IsPathRooted(list[0]));
+        Assert.True(Path.IsPathRooted(list[0].Path));
+    }
+
+    [Fact]
+    public void Add_Folder_StoresKindFolder()
+    {
+        _svc.Add("/home/user/projects", RecentKind.Folder);
+        var list = _svc.Load();
+        Assert.Single(list);
+        Assert.Equal(RecentKind.Folder, list[0].Kind);
     }
 
     // ── Clear ──────────────────────────────────────────────────────────────
@@ -103,8 +112,8 @@ public sealed class RecentFilesServiceTests : IDisposable
     [Fact]
     public void Clear_RemovesAllEntries()
     {
-        _svc.Add("/a.cs");
-        _svc.Add("/b.cs");
+        _svc.Add("/a.cs", RecentKind.File);
+        _svc.Add("/b.cs", RecentKind.File);
         _svc.Clear();
         Assert.Empty(_svc.Load());
     }

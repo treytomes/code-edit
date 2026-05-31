@@ -61,6 +61,10 @@ public sealed class EditorView : View
     public event EventHandler? FindNextRequested;
     public event EventHandler? FindPrevRequested;
     public event EventHandler? KeyboardShortcutsRequested;
+    public event EventHandler? NextTabRequested;
+    public event EventHandler? PrevTabRequested;
+    public event EventHandler? CloseTabRequested;
+    public event EventHandler? FileTreeToggleRequested;
 
     public EditorView(
         IEventBus         eventBus,
@@ -375,6 +379,33 @@ public sealed class EditorView : View
         if (key.KeyCode == KeyCode.F1)
         {
             KeyboardShortcutsRequested?.Invoke(this, EventArgs.Empty);
+            key.Handled = true;
+            return true;
+        }
+
+        // ── Tab shortcuts ──────────────────────────────────────────────────
+
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.Tab))
+        {
+            NextTabRequested?.Invoke(this, EventArgs.Empty);
+            key.Handled = true;
+            return true;
+        }
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.ShiftMask | KeyCode.Tab))
+        {
+            PrevTabRequested?.Invoke(this, EventArgs.Empty);
+            key.Handled = true;
+            return true;
+        }
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.W))
+        {
+            CloseTabRequested?.Invoke(this, EventArgs.Empty);
+            key.Handled = true;
+            return true;
+        }
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.B))
+        {
+            FileTreeToggleRequested?.Invoke(this, EventArgs.Empty);
             key.Handled = true;
             return true;
         }

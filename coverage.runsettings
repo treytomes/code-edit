@@ -1,0 +1,23 @@
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <!-- Exclude the Presentation layer: Terminal.Gui views can't be unit-tested -->
+          <Exclude>[CodeEdit.Presentation]*</Exclude>
+          <ExcludeByFile>**/obj/**</ExcludeByFile>
+          <SkipAutoProps>true</SkipAutoProps>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+  <InProcDataCollectionRunSettings>
+    <InProcDataCollectors>
+      <InProcDataCollector
+        assemblyQualifiedName="coverlet.collector.CoverletCoverageDataCollector, coverlet.collector, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+        friendlyName="XPlat Code Coverage"
+        enabled="True" />
+    </InProcDataCollectors>
+  </InProcDataCollectionRunSettings>
+</RunSettings>

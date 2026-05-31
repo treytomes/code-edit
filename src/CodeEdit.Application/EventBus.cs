@@ -4,87 +4,61 @@ using Microsoft.Extensions.Logging;
 
 namespace CodeEdit.Application;
 
-public sealed class EventBus(ILogger<EventBus> logger) : IEventBus
+public sealed class EventBus : IEventBus
 {
-    private readonly ILogger<EventBus> _logger = logger;
-    private IMutableTextBuffer? _buffer;
-    private readonly Stack<IBufferEvent> _undoStack = new();
-    private readonly Stack<IBufferEvent> _redoStack = new();
+    private readonly ILogger<EventBus> _logger;
 
-    public ITextBuffer Buffer =>
-        _buffer ?? throw new InvalidOperationException("Buffer has not been set. Call SetBuffer before using the event bus.");
+    public BufferManager Buffers { get; } = new();
 
-    public void SetBuffer(IMutableTextBuffer buffer)
-    {
-        _buffer = buffer;
-        _undoStack.Clear();
-        _redoStack.Clear();
-    }
+    public ITextBuffer Buffer => Buffers.ActiveBuffer;
 
-    public bool CanUndo => _undoStack.Count > 0;
-    public bool CanRedo => _redoStack.Count > 0;
+    public bool CanUndo => Buffers.ActiveHistory.CanUndo;
+    public bool CanRedo => Buffers.ActiveHistory.CanRedo;
 
-    public event EventHandler<BufferEventArgs>? EventExecuted;
-    public event EventHandler<BufferEventArgs>? EventUndone;
-    public event EventHandler<BufferEventArgs>? EventRedone;
+    public event EventHandler<BufferEventArgs>?        EventExecuted;
+    public event EventHandler<BufferEventArgs>?        EventUndone;
+    public event EventHandler<BufferEventArgs>?        EventRedone;
     public event EventHandler<BufferMutatedEventArgs>? BufferMutated;
+    public event EventHandler?                         BufferChanged;
+
+    public EventBus(ILogger<EventBus> logger)
+    {
+        _logger = logger;
+        Buffers.ActiveTabChanged += (_, _) => BufferChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     public void Publish(IBufferEvent bufferEvent)
     {
-        var buf = _buffer ?? throw new InvalidOperationException("Buffer has not been set.");
-
         _logger.LogDebug("Publish {EventType}: {Description}", bufferEvent.GetType().Name, bufferEvent.ToString());
 
-        bufferEvent.Execute(buf);
-
-        if (_undoStack.Count > 0)
-        {
-            var top = _undoStack.Peek();
-            if (top.TryCoalesce(bufferEvent, out var merged))
-            {
-                _undoStack.Pop();
-                _undoStack.Push(merged);
-                _redoStack.Clear();
-                EventExecuted?.Invoke(this, new BufferEventArgs(merged));
-                FireMutated(merged);
-                return;
-            }
-        }
-
-        _undoStack.Push(bufferEvent);
-        _redoStack.Clear();
-        EventExecuted?.Invoke(this, new BufferEventArgs(bufferEvent));
-        FireMutated(bufferEvent);
+        bufferEvent.Execute(Buffers.ActiveBuffer);
+        var stored = Buffers.ActiveHistory.Push(bufferEvent);
+        EventExecuted?.Invoke(this, new BufferEventArgs(stored));
+        FireMutated(stored);
     }
 
     public void Undo()
     {
-        if (_undoStack.Count == 0)
+        var ev = Buffers.ActiveHistory.TryUndo();
+        if (ev is null)
         {
             _logger.LogWarning("Undo called with empty undo stack");
             return;
         }
-
-        var buf = _buffer ?? throw new InvalidOperationException("Buffer has not been set.");
-        var ev = _undoStack.Pop();
-        ev.Undo(buf);
-        _redoStack.Push(ev);
+        ev.Undo(Buffers.ActiveBuffer);
         EventUndone?.Invoke(this, new BufferEventArgs(ev));
         FireMutated(ev);
     }
 
     public void Redo()
     {
-        if (_redoStack.Count == 0)
+        var ev = Buffers.ActiveHistory.TryRedo();
+        if (ev is null)
         {
             _logger.LogWarning("Redo called with empty redo stack");
             return;
         }
-
-        var buf = _buffer ?? throw new InvalidOperationException("Buffer has not been set.");
-        var ev = _redoStack.Pop();
-        ev.Execute(buf);
-        _undoStack.Push(ev);
+        ev.Execute(Buffers.ActiveBuffer);
         EventRedone?.Invoke(this, new BufferEventArgs(ev));
         FireMutated(ev);
     }
