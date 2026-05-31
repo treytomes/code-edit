@@ -129,4 +129,71 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.Equal(EditorSettings.Default.TabWidth,     s.TabWidth);
         Assert.Equal(EditorSettings.Default.InsertSpaces, s.InsertSpaces);
     }
+
+    [Fact]
+    public void Load_ActiveTheme_IsRead()
+    {
+        File.WriteAllText(SettingsPath, """{"activeTheme": "My Theme"}""");
+        var s = _svc.Load();
+        Assert.Equal("My Theme", s.ActiveTheme);
+    }
+
+    [Fact]
+    public void Load_NoActiveTheme_IsNull()
+    {
+        File.WriteAllText(SettingsPath, """{"tabWidth": 4}""");
+        var s = _svc.Load();
+        Assert.Null(s.ActiveTheme);
+    }
+
+    // ── SaveActiveTheme ────────────────────────────────────────────────────
+
+    [Fact]
+    public void SaveActiveTheme_WritesThemeNameToFile()
+    {
+        _svc.SaveActiveTheme("My Theme");
+        var s = _svc.Load();
+        Assert.Equal("My Theme", s.ActiveTheme);
+    }
+
+    [Fact]
+    public void SaveActiveTheme_PreservesExistingSettings()
+    {
+        File.WriteAllText(SettingsPath, """{"tabWidth": 2, "insertSpaces": false, "recentFilesMax": 5}""");
+        _svc.SaveActiveTheme("VS Code Dark+");
+        var s = _svc.Load();
+        Assert.Equal(2,              s.TabWidth);
+        Assert.False(s.InsertSpaces);
+        Assert.Equal(5,              s.RecentFilesMax);
+        Assert.Equal("VS Code Dark+", s.ActiveTheme);
+    }
+
+    [Fact]
+    public void SaveActiveTheme_OverwritesPreviousThemeName()
+    {
+        _svc.SaveActiveTheme("First");
+        _svc.SaveActiveTheme("Second");
+        var s = _svc.Load();
+        Assert.Equal("Second", s.ActiveTheme);
+    }
+
+    [Fact]
+    public void SaveActiveTheme_WithNull_WritesNullableNull()
+    {
+        _svc.SaveActiveTheme("Some Theme");
+        _svc.SaveActiveTheme(null);
+        var s = _svc.Load();
+        Assert.Null(s.ActiveTheme);
+    }
+
+    [Fact]
+    public void SaveActiveTheme_TabWidthPreservedAsInteger_NotString()
+    {
+        File.WriteAllText(SettingsPath, """{"tabWidth": 4}""");
+        _svc.SaveActiveTheme("X");
+        var json = File.ReadAllText(SettingsPath);
+        // tabWidth must remain a JSON number, not "4"
+        Assert.Contains("\"tabWidth\": 4", json);
+        Assert.DoesNotContain("\"tabWidth\": \"4\"", json);
+    }
 }

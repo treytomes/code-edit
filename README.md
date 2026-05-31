@@ -1,5 +1,7 @@
 # code-edit
 
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/treytomes)
+
 ![CI](https://github.com/treytomes/code-edit/actions/workflows/ci.yml/badge.svg)
 
 A lightweight TUI code editor for Linux, macOS, and Windows. Targets DOS EDIT feature parity as v1, with progressive VS Code parity as the long-term horizon.
@@ -15,7 +17,8 @@ Built with [Terminal.Gui v2](https://github.com/gui-cs/Terminal.Gui) and .NET 10
 - **Text editing** — insert, delete, undo/redo, clipboard (cut/copy/paste)
 - **Navigation** — cursor movement, word jump, scroll, select all, mouse support
 - **Search and replace** — find, find next/previous, replace, replace all; case-sensitive and whole-word options
-- **Syntax highlighting** — C#, Python, Bash, JSON, YAML, .env, Markdown; user grammar overrides at `~/.code-edit/syntaxes/`
+- **Syntax highlighting** — C#, Python, Bash, JSON, YAML, XML/csproj, .env, Markdown; user grammar overrides at `~/.code-edit/syntaxes/`
+- **Theme editor** — View > Edit Theme… to browse, create, edit, duplicate, rename, import, and export named color themes stored in `~/.code-edit/themes/`
 - **File operations** — new, open file, open folder, save, save as, recent files and folders
 - **Word wrap** toggle
 - **Help** — keyboard shortcut reference (F1), About

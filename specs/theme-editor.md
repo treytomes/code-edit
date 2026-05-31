@@ -1,7 +1,7 @@
 # Spec: Theme Editor
 
 ## Status
-Draft
+Implemented
 
 ## Overview
 An in-app TUI dialog for browsing, creating, editing, and deleting named color themes. Themes are stored as individual JSON files in `~/.code-edit/themes/`. The active theme name is persisted in `settings.json`. Users can export any theme to an arbitrary path and import theme files from the file tree or a file-picker dialog.
@@ -142,6 +142,15 @@ public sealed class ThemeService(ILogger<ThemeService> logger, string? themesDir
 
 `themesDir` defaults to `~/.code-edit/themes/`. Test-isolation pattern matches existing services.
 
+### `ThemeImportException`
+
+```csharp
+// Thrown by ThemeService.Import for invalid or colliding theme files.
+public sealed class ThemeImportException(string message) : Exception(message);
+```
+
+Lives in `CodeEdit.Infrastructure.Settings` alongside `ThemeService`. Carries only the human-readable message; callers display it via the error dialog pattern.
+
 ### `ThemeRegistry` addition
 
 ```csharp
@@ -161,7 +170,7 @@ Opens as an 80×24 modal dialog.
 │   Solarized Dark          │ Line Number       ██ #858585    ██ #1E1E1E  │
 │                           │ Status Bar        ██ #FFFFFF    ██ #007ACC  │
 │                           │ Menu Bar          ██ #FFFFFF    ██ #007ACC  │
-│ [ New ] [ Dupe ] [ Del ]  │ Tab Bar           ██ #D4D4D4    ██ #2D2D2D  │
+│ [New] [Dupe] [Ren] [Del]  │ Tab Bar           ██ #D4D4D4    ██ #2D2D2D  │
 │ [ Import ] [ Export ]     │ File Tree         ██ #D4D4D4    ██ #252526  │
 │                           │ ── Tokens ──────────────────────────────    │
 │                           │ Keyword           ██ #569CD6    ██ #1E1E1E  │
@@ -171,7 +180,9 @@ Opens as an 80×24 modal dialog.
 └───────────────────────────┴────────────[ Revert ]  [ Cancel ]  [ Save ]─┘
 ```
 
-- **Left panel**: scrollable list of theme names; `●` marks the active theme; `[ New ]`, `[ Dupe ]`, `[ Del ]`, `[ Import ]`, `[ Export ]` buttons below
+The color swatches (`██`) are rendered as two background-colored spaces using `SetAttribute` + `AddStr` — Terminal.Gui has no native swatch widget. The swatch color matches the hex value shown beside it.
+
+- **Left panel**: scrollable list of theme names; `●` marks the active theme; `[ New ]`, `[ Dupe ]`, `[ Ren ]`, `[ Del ]`, `[ Import ]`, `[ Export ]` buttons below
 - **Right panel**: scrollable role list; selecting a swatch (Tab/Enter or click) opens the inline RGB editor at the bottom
 - **Live preview**: every valid RGB change immediately calls `themeRegistry.SetTheme(workingCopy)`; the editor behind the dialog redraws in real time
 
@@ -225,6 +236,19 @@ All failable operations (Save, Export, Import, Delete) catch exceptions and disp
 - Register `ThemeService` in DI (after `app.Init()`).
 - On launch: call `themeService.LoadAll()` to seed the directory; then `themeService.LoadByName(editorSettings.ActiveTheme)` and apply via `themeRegistry.SetTheme()` if found.
 - View menu: `View > Edit Theme…` → opens `ThemeEditorDialog`.
+
+`ThemeEditorDialog` is **not** registered in DI — it is instantiated directly at the call site (same pattern as `OpenDialog` / `SaveDialog`). It receives `ThemeService`, `ThemeRegistry`, and `SettingsService` as constructor parameters, all resolved from the DI container at the point the menu item is invoked:
+
+```csharp
+new MenuItem("Edit _Theme…", "", () =>
+{
+    var dlg = new ThemeEditorDialog(
+        provider.GetRequiredService<ThemeService>(),
+        provider.GetRequiredService<ThemeRegistry>(),
+        provider.GetRequiredService<SettingsService>());
+    app.Run(dlg);
+});
+```
 
 ### Tests
 

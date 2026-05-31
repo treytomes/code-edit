@@ -153,7 +153,12 @@ interface IMutableTextBuffer : ITextBuffer
 }
 
 // Abstract color pair — no Terminal.Gui reference
-readonly record struct ColorPair(int Foreground, int Background);
+readonly record struct Rgb(byte R, byte G, byte B);
+readonly record struct ColorPair(Rgb Foreground, Rgb Background)
+{
+    public static ColorPair Of(byte fR, byte fG, byte fB, byte bR, byte bG, byte bB)
+        => new(new Rgb(fR, fG, fB), new Rgb(bR, bG, bB));
+}
 
 readonly record struct CursorPosition(int Line, int Column);
 readonly record struct Selection(CursorPosition Anchor, CursorPosition Active);
@@ -197,12 +202,15 @@ interface ISyntaxDetector
 interface IColorTheme
 {
     ColorPair ForToken(TokenType type);
-    ColorPair Normal { get; }
-    ColorPair Selection { get; }
-    ColorPair LineNumber { get; }
-    ColorPair StatusBar { get; }
-    ColorPair MenuBar { get; }
-    ColorPair Dialog { get; }
+    ColorPair Normal      { get; }
+    ColorPair Selection   { get; }
+    ColorPair LineNumber  { get; }
+    ColorPair StatusBar   { get; }
+    ColorPair MenuBar     { get; }
+    ColorPair TabBar      { get; }
+    ColorPair FileTree    { get; }
+    ColorPair Dialog      { get; }
+    ColorPair SearchMatch { get; }
 }
 
 interface IFileService
@@ -219,8 +227,10 @@ interface IFileService
 // Single class permitted to reference both ColorPair and Terminal.Gui.Attribute
 static class ColorPairMapper
 {
-    public static Terminal.Gui.Attribute ToAttribute(ColorPair pair) =>
-        new Terminal.Gui.Attribute(pair.Foreground, pair.Background);
+    public static Terminal.Gui.Drawing.Attribute ToAttribute(ColorPair pair) =>
+        new(
+            new Color(pair.Foreground.R, pair.Foreground.G, pair.Foreground.B, 255),
+            new Color(pair.Background.R, pair.Background.G, pair.Background.B, 255));
 }
 ```
 
@@ -361,7 +371,7 @@ class ThemeRegistry
 
 `ThemeRegistry` is registered as a singleton in MEDI and injected into views. When `ThemeChanged` fires, views call `SetNeedsDisplay()`. In v1, `SetTheme` is never called after startup — it exists to make future configurability a one-line change.
 
-`DefaultDarkTheme` (Infrastructure) implements `IColorTheme` using `ColorPair` with integer color indices compatible with Terminal.Gui's `Color` enum values — the mapping table lives only in `ColorPairMapper`.
+`DefaultDarkTheme` (Infrastructure) implements `IColorTheme` using named `Rgb` constants modelled on the VS Code Dark+ palette. `ColorPairMapper` converts to `Terminal.Gui.Drawing.Attribute` using 24-bit `Color(r, g, b, 255)` — no 16-color palette involvement.
 
 ---
 

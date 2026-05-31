@@ -29,7 +29,8 @@ public static class AppBootstrap
         var logDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".code-edit", "logs");
-        Directory.CreateDirectory(logDir);
+        try { Directory.CreateDirectory(logDir); }
+        catch (Exception) { /* Best-effort; file logging simply won't work */ }
 
         var services = new ServiceCollection();
 
@@ -68,6 +69,7 @@ public static class AppBootstrap
         services.AddSingleton(editorSettings);
         services.AddSingleton<RecentFilesService>();
         services.AddSingleton<SessionService>();
+        services.AddSingleton<ThemeService>();
         services.AddSingleton<EditorView>();
         services.AddSingleton<SearchBarView>();
         services.AddSingleton<TabBarView>();
@@ -85,10 +87,22 @@ public static class AppBootstrap
             var fileService   = provider.GetRequiredService<IFileService>();
             var recentFiles   = provider.GetRequiredService<RecentFilesService>();
             var sessionSvc    = provider.GetRequiredService<SessionService>();
+            var themeSvc      = provider.GetRequiredService<ThemeService>();
+            var themeRegistry = provider.GetRequiredService<ThemeRegistry>();
+            var settingsSvc   = provider.GetRequiredService<SettingsService>();
+
+            // ── Theme seeding and active theme restore ─────────────────────
+            themeSvc.LoadAll();  // seeds ~/.code-edit/themes/ if empty
+            if (editorSettings.ActiveTheme is not null)
+            {
+                var saved = themeSvc.LoadByName(editorSettings.ActiveTheme);
+                if (saved is not null) themeRegistry.SetTheme(saved);
+            }
 
             // ── Working directory root ─────────────────────────────────────
 
             string rootDir;
+            string? cmdOpenError = null;
             var cmdArgs = Environment.GetCommandLineArgs();
 
             if (cmdArgs.Length > 1 && !string.IsNullOrWhiteSpace(cmdArgs[1]))
@@ -98,10 +112,19 @@ public static class AppBootstrap
                     ? cmdPath
                     : Path.GetDirectoryName(Path.GetFullPath(cmdPath)) ?? Environment.CurrentDirectory;
 
-                var buf = (IMutableTextBuffer)fileService.Open(cmdPath);
-                recentFiles.Add(cmdPath, RecentKind.File);
-                logger.LogInformation("Opened file: {Path}", cmdPath);
-                eventBus.Buffers.Add(buf);
+                try
+                {
+                    var buf = (IMutableTextBuffer)fileService.Open(cmdPath);
+                    recentFiles.Add(cmdPath, RecentKind.File);
+                    logger.LogInformation("Opened file: {Path}", cmdPath);
+                    eventBus.Buffers.Add(buf);
+                }
+                catch (FileServiceException ex)
+                {
+                    logger.LogWarning(ex, "Could not open command-line file: {Path}", cmdPath);
+                    eventBus.Buffers.Add(new EmptyBuffer());
+                    cmdOpenError = ex.Message;
+                }
             }
             else
             {
@@ -148,10 +171,10 @@ public static class AppBootstrap
             {
                 var tabH  = tabBar.Visible ? 1 : 0;
                 var treeW = fileTree.Visible ? TreeWidth : 0;
-                fileTree.Height   = Dim.Fill() - Dim.Absolute(tabH + 1 + currentBarH);
+                fileTree.Height   = Dim.Fill() - Dim.Absolute(1 + currentBarH);
                 editorView.X      = Pos.Absolute(treeW);
                 editorView.Width  = Dim.Fill();   // Fill from X, which already accounts for tree width
-                editorView.Height = Dim.Fill() - Dim.Absolute(tabH + 1 + currentBarH);
+                editorView.Height = Dim.Fill() - Dim.Absolute(1 + currentBarH);
                 searchBar.Y       = Pos.AnchorEnd(1 + currentBarH);
                 searchBar.Height  = Dim.Absolute(currentBarH);
             }
@@ -631,6 +654,12 @@ public static class AppBootstrap
                     fileTreeItem,
                     tabBarItem,
                     wrapItem,
+                    null!,
+                    new MenuItem("Edit _Theme…", "", () =>
+                    {
+                        var dlg = new ThemeEditorDialog(themeSvc, themeRegistry, settingsSvc);
+                        app.Run(dlg);
+                    }),
                 ]),
                 new MenuBarItem("_Help",
                 [
@@ -649,12 +678,12 @@ public static class AppBootstrap
             fileTree.X      = 0;
             fileTree.Y      = Pos.Bottom(tabBar);
             fileTree.Width  = Dim.Absolute(TreeWidth);
-            fileTree.Height = Dim.Fill() - Dim.Absolute(2);
+            fileTree.Height = Dim.Fill() - Dim.Absolute(1);
 
             editorView.X      = Pos.Absolute(TreeWidth);
             editorView.Y      = Pos.Bottom(tabBar);
             editorView.Width  = Dim.Fill();   // Fill from X, which already accounts for tree width
-            editorView.Height = Dim.Fill() - Dim.Absolute(2);
+            editorView.Height = Dim.Fill() - Dim.Absolute(1);
 
             searchBar.X      = 0;
             searchBar.Y      = Pos.AnchorEnd(1);
@@ -678,13 +707,19 @@ public static class AppBootstrap
             };
 
             editorView.SetFocus();
+
+            if (cmdOpenError is not null)
+                app.Invoke(() => MessageBox.Query(app, "Error", cmdOpenError, "OK"));
+
             app.Run(window);
             logger.LogInformation("code-edit stopped");
         }
         catch (Exception ex)
         {
             logger.LogCritical(ex, "Unhandled exception — exiting");
-            throw;
+            try { MessageBox.Query(app, "Fatal Error", $"An unexpected error occurred:\n{ex.Message}", "OK"); }
+            catch { /* terminal may be unavailable */ }
+            // Exit gracefully — error was logged and shown; don't crash with a stack trace
         }
     }
 }
