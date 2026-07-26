@@ -196,4 +196,57 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.Contains("\"tabWidth\": 4", json);
         Assert.DoesNotContain("\"tabWidth\": \"4\"", json);
     }
+
+    // ── ResultsPanelHeight ────────────────────────────────────────────────────
+
+    [Fact]
+    public void Load_ResultsPanelHeight_IsRead()
+    {
+        File.WriteAllText(SettingsPath, """{"resultsPanelHeight": 15}""");
+        var s = _svc.Load();
+        Assert.Equal(15, s.ResultsPanelHeight);
+    }
+
+    [Fact]
+    public void Load_NoResultsPanelHeight_ReturnsDefault()
+    {
+        File.WriteAllText(SettingsPath, """{"tabWidth": 4}""");
+        var s = _svc.Load();
+        Assert.Equal(EditorSettings.Default.ResultsPanelHeight, s.ResultsPanelHeight);
+    }
+
+    [Fact]
+    public void Load_ResultsPanelHeightZero_FallsBackToDefault()
+    {
+        File.WriteAllText(SettingsPath, """{"resultsPanelHeight": 0}""");
+        var s = _svc.Load();
+        Assert.Equal(EditorSettings.Default.ResultsPanelHeight, s.ResultsPanelHeight);
+    }
+
+    [Fact]
+    public void Load_ResultsPanelHeightNegative_FallsBackToDefault()
+    {
+        File.WriteAllText(SettingsPath, """{"resultsPanelHeight": -5}""");
+        var s = _svc.Load();
+        Assert.Equal(EditorSettings.Default.ResultsPanelHeight, s.ResultsPanelHeight);
+    }
+
+    [Fact]
+    public void SaveResultsPanelHeight_WritesValueToFile()
+    {
+        _svc.SaveResultsPanelHeight(15);
+        var s = _svc.Load();
+        Assert.Equal(15, s.ResultsPanelHeight);
+    }
+
+    [Fact]
+    public void SaveResultsPanelHeight_PreservesExistingSettings()
+    {
+        File.WriteAllText(SettingsPath, """{"tabWidth": 2, "insertSpaces": false}""");
+        _svc.SaveResultsPanelHeight(20);
+        var s = _svc.Load();
+        Assert.Equal(2,  s.TabWidth);
+        Assert.False(s.InsertSpaces);
+        Assert.Equal(20, s.ResultsPanelHeight);
+    }
 }

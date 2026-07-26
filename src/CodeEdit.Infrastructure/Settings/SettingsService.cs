@@ -27,14 +27,15 @@ public sealed class SettingsService(ILogger<SettingsService> logger, string? set
 
             if (raw is null) return EditorSettings.Default;
 
-            var tabWidth       = raw.TabWidth       is > 0 ? raw.TabWidth.Value       : EditorSettings.Default.TabWidth;
-            var insertSpaces   = raw.InsertSpaces   ?? EditorSettings.Default.InsertSpaces;
-            var recentFilesMax = raw.RecentFilesMax is > 0 ? raw.RecentFilesMax.Value : EditorSettings.Default.RecentFilesMax;
-            var activeTheme    = raw.ActiveTheme;
+            var tabWidth           = raw.TabWidth           is > 0 ? raw.TabWidth.Value           : EditorSettings.Default.TabWidth;
+            var insertSpaces       = raw.InsertSpaces       ?? EditorSettings.Default.InsertSpaces;
+            var recentFilesMax     = raw.RecentFilesMax     is > 0 ? raw.RecentFilesMax.Value     : EditorSettings.Default.RecentFilesMax;
+            var activeTheme        = raw.ActiveTheme;
+            var resultsPanelHeight = raw.ResultsPanelHeight is > 0 ? raw.ResultsPanelHeight.Value : EditorSettings.Default.ResultsPanelHeight;
 
-            logger.LogInformation("Loaded settings: tabWidth={TabWidth} insertSpaces={InsertSpaces} recentFilesMax={RecentFilesMax} activeTheme={ActiveTheme}",
-                tabWidth, insertSpaces, recentFilesMax, activeTheme);
-            return new EditorSettings(tabWidth, insertSpaces, recentFilesMax, activeTheme);
+            logger.LogInformation("Loaded settings: tabWidth={TabWidth} insertSpaces={InsertSpaces} recentFilesMax={RecentFilesMax} activeTheme={ActiveTheme} resultsPanelHeight={ResultsPanelHeight}",
+                tabWidth, insertSpaces, recentFilesMax, activeTheme, resultsPanelHeight);
+            return new EditorSettings(tabWidth, insertSpaces, recentFilesMax, activeTheme, resultsPanelHeight);
         }
         catch (Exception ex)
         {
@@ -65,6 +66,26 @@ public sealed class SettingsService(ILogger<SettingsService> logger, string? set
         }
     }
 
+    public void SaveResultsPanelHeight(int height)
+    {
+        try
+        {
+            var existing = File.Exists(SettingsPath)
+                ? JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+                    File.ReadAllText(SettingsPath), _readOpts) ?? []
+                : new Dictionary<string, JsonElement>();
+
+            existing["resultsPanelHeight"] = JsonSerializer.SerializeToElement(height);
+
+            Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
+            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(existing, _writeOpts));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to save resultsPanelHeight to {Path}", SettingsPath);
+        }
+    }
+
     private static readonly JsonSerializerOptions _readOpts = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -79,9 +100,10 @@ public sealed class SettingsService(ILogger<SettingsService> logger, string? set
 
     private sealed class SettingsJson
     {
-        public int?    TabWidth       { get; set; }
-        public bool?   InsertSpaces   { get; set; }
-        public int?    RecentFilesMax { get; set; }
-        public string? ActiveTheme    { get; set; }
+        public int?    TabWidth           { get; set; }
+        public bool?   InsertSpaces       { get; set; }
+        public int?    RecentFilesMax     { get; set; }
+        public string? ActiveTheme        { get; set; }
+        public int?    ResultsPanelHeight { get; set; }
     }
 }
