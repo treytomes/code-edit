@@ -117,23 +117,31 @@ public static class AppBootstrap
 
             if (cmdArgs.Length > 1 && !string.IsNullOrWhiteSpace(cmdArgs[1]))
             {
-                var cmdPath = cmdArgs[1];
-                rootDir = Directory.Exists(cmdPath)
-                    ? cmdPath
-                    : Path.GetDirectoryName(Path.GetFullPath(cmdPath)) ?? Environment.CurrentDirectory;
+                var cmdPath = Path.GetFullPath(cmdArgs[1]);
 
-                try
+                if (Directory.Exists(cmdPath))
                 {
-                    var buf = (IMutableTextBuffer)fileService.Open(cmdPath);
-                    recentFiles.Add(cmdPath, RecentKind.File);
-                    logger.LogInformation("Opened file: {Path}", cmdPath);
-                    eventBus.Buffers.Add(buf);
-                }
-                catch (FileServiceException ex)
-                {
-                    logger.LogWarning(ex, "Could not open command-line file: {Path}", cmdPath);
+                    rootDir = cmdPath;
                     eventBus.Buffers.Add(new EmptyBuffer());
-                    cmdOpenError = ex.Message;
+                    recentFiles.Add(cmdPath, RecentKind.Folder);
+                    logger.LogInformation("Opened folder: {Path}", cmdPath);
+                }
+                else
+                {
+                    rootDir = Path.GetDirectoryName(cmdPath) ?? Environment.CurrentDirectory;
+                    try
+                    {
+                        var buf = (IMutableTextBuffer)fileService.Open(cmdPath);
+                        recentFiles.Add(cmdPath, RecentKind.File);
+                        logger.LogInformation("Opened file: {Path}", cmdPath);
+                        eventBus.Buffers.Add(buf);
+                    }
+                    catch (FileServiceException ex)
+                    {
+                        logger.LogWarning(ex, "Could not open command-line file: {Path}", cmdPath);
+                        eventBus.Buffers.Add(new EmptyBuffer());
+                        cmdOpenError = ex.Message;
+                    }
                 }
             }
             else
