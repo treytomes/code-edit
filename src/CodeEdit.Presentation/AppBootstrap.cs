@@ -286,7 +286,13 @@ public static class AppBootstrap
             void DoOpenFile()
             {
                 var dlg = new OpenDialog { MustExist = true, OpenMode = Terminal.Gui.Views.OpenMode.File };
-                app.Run(dlg);
+                try { app.Run(dlg); }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "OpenDialog (file) failed to initialise");
+                    statusBar.SetMessage("Could not open file browser");
+                    return;
+                }
 
                 if (dlg.Canceled || dlg.FilePaths.Count == 0) return;
 
@@ -311,10 +317,10 @@ public static class AppBootstrap
                 }
                 else
                 {
-                    var dlg = new OpenDialog { MustExist = true, OpenMode = Terminal.Gui.Views.OpenMode.Directory };
+                    var dlg = new FolderPickerDialog(app, themeRegistry.Active, rootDir);
                     app.Run(dlg);
-                    if (dlg.Canceled || dlg.FilePaths.Count == 0) return;
-                    folderPath = dlg.FilePaths[0].ToString()!;
+                    if (dlg.Canceled) return;
+                    folderPath = dlg.SelectedPath;
                 }
 
                 rootDir = folderPath;
