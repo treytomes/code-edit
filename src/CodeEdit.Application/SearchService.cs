@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using CodeEdit.Application.Events;
 using CodeEdit.Domain;
 using Microsoft.Extensions.Logging;
@@ -7,9 +8,10 @@ namespace CodeEdit.Application;
 public sealed class SearchService(ILogger<SearchService> logger)
 {
     public IReadOnlyList<CursorPosition> FindAll(
-        ITextBuffer buffer, string query, bool matchCase, bool wholeWord)
+        ITextBuffer buffer, string query, bool matchCase, bool wholeWord,
+        Regex? regex = null)
     {
-        if (string.IsNullOrEmpty(query)) return [];
+        if (string.IsNullOrEmpty(query) && regex is null) return [];
 
         var comparison = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         var results    = new List<CursorPosition>();
@@ -17,16 +19,22 @@ public sealed class SearchService(ILogger<SearchService> logger)
         for (var lineIdx = 0; lineIdx < buffer.LineCount; lineIdx++)
         {
             var line = buffer.GetLine(lineIdx);
-            var col  = 0;
-            while (col <= line.Length - query.Length)
+            if (regex is not null)
             {
-                var idx = line.IndexOf(query, col, comparison);
-                if (idx < 0) break;
-
-                if (!wholeWord || IsWholeWord(line, idx, query.Length))
-                    results.Add(new CursorPosition(lineIdx, idx));
-
-                col = idx + 1;
+                foreach (System.Text.RegularExpressions.Match m in regex.Matches(line))
+                    results.Add(new CursorPosition(lineIdx, m.Index));
+            }
+            else
+            {
+                var col = 0;
+                while (col <= line.Length - query.Length)
+                {
+                    var idx = line.IndexOf(query, col, comparison);
+                    if (idx < 0) break;
+                    if (!wholeWord || IsWholeWord(line, idx, query.Length))
+                        results.Add(new CursorPosition(lineIdx, idx));
+                    col = idx + 1;
+                }
             }
         }
 
@@ -36,10 +44,10 @@ public sealed class SearchService(ILogger<SearchService> logger)
 
     public CursorPosition? FindNext(
         ITextBuffer buffer, string query, bool matchCase, bool wholeWord,
-        CursorPosition from, out bool wrapped)
+        CursorPosition from, out bool wrapped, Regex? regex = null)
     {
         wrapped = false;
-        var matches = FindAll(buffer, query, matchCase, wholeWord);
+        var matches = FindAll(buffer, query, matchCase, wholeWord, regex);
         if (matches.Count == 0) return null;
 
         // First match strictly after `from`
@@ -56,10 +64,10 @@ public sealed class SearchService(ILogger<SearchService> logger)
 
     public CursorPosition? FindPrev(
         ITextBuffer buffer, string query, bool matchCase, bool wholeWord,
-        CursorPosition from, out bool wrapped)
+        CursorPosition from, out bool wrapped, Regex? regex = null)
     {
         wrapped = false;
-        var matches = FindAll(buffer, query, matchCase, wholeWord);
+        var matches = FindAll(buffer, query, matchCase, wholeWord, regex);
         if (matches.Count == 0) return null;
 
         // Last match strictly before `from`

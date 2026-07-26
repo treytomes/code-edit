@@ -5,6 +5,7 @@ using CodeEdit.Application.Ports;
 using CodeEdit.Domain;
 using CodeEdit.Infrastructure.Buffer;
 using CodeEdit.Infrastructure.Logging;
+using CodeEdit.Infrastructure.Search;
 using CodeEdit.Infrastructure.Settings;
 using CodeEdit.Infrastructure.Syntax;
 using CodeEdit.Infrastructure.Theme;
@@ -21,8 +22,9 @@ namespace CodeEdit.Presentation;
 
 public static class AppBootstrap
 {
-    private const int TreeWidth      = 30;
-    private const int MinEditorWidth = 30;
+    private const int TreeWidth                = 30;
+    private const int MinEditorWidth           = 30;
+    private const int DefaultResultsPanelHeight = 10;
 
     public static void Run()
     {
@@ -70,10 +72,14 @@ public static class AppBootstrap
         services.AddSingleton<RecentFilesService>();
         services.AddSingleton<SessionService>();
         services.AddSingleton<ThemeService>();
+        services.AddSingleton<SearchContext>();
+        services.AddSingleton<FindInFilesService>();
         services.AddSingleton<EditorView>();
         services.AddSingleton<SearchBarView>();
         services.AddSingleton<TabBarView>();
         services.AddSingleton<FileTreeView>();
+        services.AddSingleton<FindResultsPanel>();
+        services.AddSingleton<SidebarView>();
         provider = services.BuildServiceProvider();
 
         try
@@ -83,6 +89,8 @@ public static class AppBootstrap
             var searchBar     = provider.GetRequiredService<SearchBarView>();
             var tabBar        = provider.GetRequiredService<TabBarView>();
             var fileTree      = provider.GetRequiredService<FileTreeView>();
+            var sidebar       = provider.GetRequiredService<SidebarView>();
+            var resultsPanel  = provider.GetRequiredService<FindResultsPanel>();
             var eventBus      = provider.GetRequiredService<IEventBus>();
             var fileService   = provider.GetRequiredService<IFileService>();
             var recentFiles   = provider.GetRequiredService<RecentFilesService>();
@@ -90,6 +98,8 @@ public static class AppBootstrap
             var themeSvc      = provider.GetRequiredService<ThemeService>();
             var themeRegistry = provider.GetRequiredService<ThemeRegistry>();
             var settingsSvc   = provider.GetRequiredService<SettingsService>();
+            var searchContext  = provider.GetRequiredService<SearchContext>();
+            var findInFilesSvc = provider.GetRequiredService<FindInFilesService>();
 
             // ── Theme seeding and active theme restore ─────────────────────
             themeSvc.LoadAll();  // seeds ~/.code-edit/themes/ if empty
@@ -164,25 +174,60 @@ public static class AppBootstrap
 
             // ── Layout helpers ─────────────────────────────────────────────
 
-            var currentBarH    = 0;
-            var treeUserVisible = true;
+            var currentBarH        = 0;
+            var sidebarUserVisible = true;
+            var resultsPanelVisible = false;
+            var resultsPanelHeight  = editorSettings.ResultsPanelHeight;
+
+            MenuItem findResultsItem = null!;
 
             void UpdateEditorLayout()
             {
-                var tabH  = tabBar.Visible ? 1 : 0;
-                var treeW = fileTree.Visible ? TreeWidth : 0;
-                fileTree.Height   = Dim.Fill() - Dim.Absolute(1 + currentBarH);
-                editorView.X      = Pos.Absolute(treeW);
-                editorView.Width  = Dim.Fill();   // Fill from X, which already accounts for tree width
-                editorView.Height = Dim.Fill() - Dim.Absolute(1 + currentBarH);
-                searchBar.Y       = Pos.AnchorEnd(1 + currentBarH);
-                searchBar.Height  = Dim.Absolute(currentBarH);
+                var sideW      = sidebar.Visible ? TreeWidth : 0;
+                var panelRows  = resultsPanelVisible ? resultsPanelHeight : 0;
+                var bottomRows = 1 + panelRows;
+
+                sidebar.Height = Dim.Fill() - Dim.Absolute(1);
+
+                editorView.X      = Pos.Absolute(sideW);
+                editorView.Width  = Dim.Fill();
+                editorView.Height = Dim.Fill() - Dim.Absolute(bottomRows + currentBarH);
+
+                searchBar.Y      = Pos.AnchorEnd(1 + panelRows + currentBarH);
+                searchBar.Height = Dim.Absolute(currentBarH);
+
+                resultsPanel.Y       = Pos.AnchorEnd(1 + panelRows);
+                resultsPanel.Height  = Dim.Absolute(panelRows);
+                resultsPanel.Visible = resultsPanelVisible;
+
+                if (findResultsItem is not null)
+                    findResultsItem.Title = (resultsPanelVisible ? "✓ " : "  ") + "_Find Results";
             }
 
-            void SetTreeVisible(bool visible)
+            void ShowResultsPanel()
             {
-                fileTree.Visible = visible;
-                fileTree.Width   = Dim.Absolute(visible ? TreeWidth : 0);
+                resultsPanelVisible = true;
+                UpdateEditorLayout();
+                resultsPanel.SetFocus();
+            }
+
+            void HideResultsPanel()
+            {
+                resultsPanelVisible = false;
+                UpdateEditorLayout();
+                editorView.SetFocus();
+            }
+
+            void ToggleResultsPanel()
+            {
+                if (resultsPanelVisible) HideResultsPanel();
+                else                     ShowResultsPanel();
+            }
+
+            void SetSidebarVisible(bool visible)
+            {
+                sidebar.Visible = visible;
+                sidebar.Width   = Dim.Absolute(visible ? TreeWidth : 0);
                 UpdateEditorLayout();
             }
 
@@ -361,18 +406,31 @@ public static class AppBootstrap
 
             editorView.FindNextRequested += (_, _) =>
             {
-                if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
+                if (searchContext.Kind == SearchContextKind.FindInFiles)
+                    AdvanceFindInFiles(forward: true);
+                else if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
                     searchBar.Open(SearchBarView.Mode.Find, resetQuery: false);
                 else
                     searchBar.NavigateNext();
             };
             editorView.FindPrevRequested += (_, _) =>
             {
-                if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
+                if (searchContext.Kind == SearchContextKind.FindInFiles)
+                    AdvanceFindInFiles(forward: false);
+                else if (searchBar.CurrentMode == SearchBarView.Mode.Closed)
                     searchBar.Open(SearchBarView.Mode.Find, resetQuery: false);
                 else
                     searchBar.NavigatePrev();
             };
+
+            void AdvanceFindInFiles(bool forward)
+            {
+                var hit = forward ? searchContext.MoveNext() : searchContext.MovePrev();
+                if (hit is null) return;
+                var (filePath, match, _) = hit.Value;
+                DoOpenFindResult(filePath, match.LineNumber);
+                resultsPanel.HighlightResult(searchContext.FileIndex, searchContext.MatchIndex);
+            }
             editorView.ReplaceRequested += (_, _) => searchBar.Open(SearchBarView.Mode.Replace);
 
             // ── Tab wiring ─────────────────────────────────────────────────
@@ -426,19 +484,112 @@ public static class AppBootstrap
 
             editorView.FileTreeToggleRequested += (_, _) =>
             {
-                treeUserVisible = !treeUserVisible;
-                // Only show if terminal is wide enough
-                var shouldShow = treeUserVisible
-                    && (fileTree.SuperView?.Viewport.Width ?? 0) >= TreeWidth + MinEditorWidth;
-                SetTreeVisible(shouldShow);
-                if (fileTree.Visible)
-                    fileTree.SetFocus();
-                else
-                    editorView.SetFocus();
+                sidebarUserVisible = !sidebarUserVisible;
+                var shouldShow = sidebarUserVisible
+                    && (sidebar.SuperView?.Viewport.Width ?? 0) >= TreeWidth + MinEditorWidth;
+                SetSidebarVisible(shouldShow);
+                if (sidebar.Visible) sidebar.SetFocusToActivePanel();
+                else                 editorView.SetFocus();
             };
 
-            // Escape in file tree returns focus to editor
-            fileTree.KeyDown += (_, key) =>
+            editorView.FindInFilesRequested += (_, _) => DoFindInFiles();
+
+            void DoFindInFiles()
+            {
+                var selection = "";
+                try
+                {
+                    var buf = eventBus.Buffer;
+                    if (buf.Selection is { } sel)
+                    {
+                        var anchor = sel.Anchor;
+                        var active = sel.Active;
+                        if (anchor.Line == active.Line)
+                        {
+                            var line = buf.GetLine(anchor.Line);
+                            var s    = Math.Min(anchor.Column, active.Column);
+                            var e    = Math.Max(anchor.Column, active.Column);
+                            if (e - s <= 200)
+                                selection = line.Substring(s, e - s);
+                        }
+                    }
+                }
+                catch (InvalidOperationException) { }
+
+                var dlg = new FindInFilesDialog(app, selection);
+                app.Run(dlg);
+                if (dlg.Canceled) return;
+
+                var capturedQuery   = dlg.Query;
+                var capturedOptions = dlg.Options;
+
+                resultsPanel.SetSearching();
+                ShowResultsPanel();
+
+                Task.Run(() =>
+                {
+                    IReadOnlyList<FileMatches> results;
+                    string? regexError = null;
+                    try { results = findInFilesSvc.Search(rootDir, capturedQuery, capturedOptions); }
+                    catch (ArgumentException ex) { results = []; regexError = ex.Message; }
+
+                    app.Invoke(() =>
+                    {
+                        if (regexError is not null)
+                        {
+                            resultsPanel.Clear();
+                            MessageBox.Query(app, "Invalid Regex", regexError, "OK");
+                            return;
+                        }
+
+                        searchContext.SetFindInFilesContext(results);
+
+                        var navigable    = results.Count(f => !string.IsNullOrEmpty(f.FilePath));
+                        var totalMatches = results.Where(f => !string.IsNullOrEmpty(f.FilePath))
+                                                  .Sum(f => f.Matches.Count);
+                        var summary = $"{capturedQuery}  ({totalMatches} match{(totalMatches == 1 ? "" : "es")} in {navigable} file{(navigable == 1 ? "" : "s")})";
+                        resultsPanel.SetResults(summary, results);
+                    });
+                });
+            }
+
+            resultsPanel.ResultOpenRequested += (_, args) =>
+                DoOpenFindResult(args.FilePath, args.LineNumber);
+
+            resultsPanel.CloseRequested += (_, _) => HideResultsPanel();
+
+            editorView.FindResultsPanelToggleRequested += (_, _) => ToggleResultsPanel();
+
+            void DoOpenFindResult(string filePath, int lineNumber)
+            {
+                var tabs     = eventBus.Buffers.Tabs;
+                var existing = tabs
+                    .Select((t, i) => (t, i))
+                    .FirstOrDefault(x => string.Equals(
+                        x.t.Buffer.FilePath, filePath, StringComparison.OrdinalIgnoreCase));
+
+                if (existing.t is not null)
+                {
+                    eventBus.Buffers.Activate(existing.i);
+                }
+                else
+                {
+                    try
+                    {
+                        var buf = (IMutableTextBuffer)fileService.Open(filePath);
+                        recentFiles.Add(filePath, RecentKind.File);
+                        eventBus.Buffers.Add(buf);
+                    }
+                    catch (FileServiceException ex) { statusBar.SetMessage(ex.Message); return; }
+                }
+
+                var cursor = new CursorPosition(lineNumber, 0);
+                eventBus.Publish(new SetCursorEvent(cursor, eventBus.Buffer.Cursor));
+                editorView.SetFocus();
+            }
+
+            // Escape in sidebar returns focus to editor
+            sidebar.KeyDown += (_, key) =>
             {
                 if (key.KeyCode == KeyCode.Esc)
                 {
@@ -462,14 +613,16 @@ public static class AppBootstrap
 
             var fileTreeItem = new MenuItem("✓ _File Tree", "Ctrl+B", () =>
             {
-                treeUserVisible = !treeUserVisible;
-                SetTreeVisible(treeUserVisible);
-                if (fileTree.Visible) fileTree.SetFocus();
-                else                  editorView.SetFocus();
+                sidebarUserVisible = !sidebarUserVisible;
+                SetSidebarVisible(sidebarUserVisible);
+                if (sidebar.Visible) sidebar.SetFocusToActivePanel();
+                else                 editorView.SetFocus();
             });
             // Keep checkmark in sync with actual visibility
-            fileTree.VisibleChanged += (_, _) =>
-                fileTreeItem.Title = (fileTree.Visible ? "✓ " : "  ") + "_File Tree";
+            sidebar.VisibleChanged += (_, _) =>
+                fileTreeItem.Title = (sidebar.Visible ? "✓ " : "  ") + "_File Tree";
+
+            findResultsItem = new MenuItem("  _Find Results", "F4", ToggleResultsPanel);
 
             // ── Auto-hide on resize ────────────────────────────────────────
 
@@ -565,8 +718,12 @@ public static class AppBootstrap
                 "  Home / End      Line start / end\n" +
                 "  Ctrl+Home/End   Document start / end\n" +
                 "\n" +
+                "SEARCH\n" +
+                "  Ctrl+Alt+F    Find in Files\n" +
+                "\n" +
                 "VIEW\n" +
                 "  Ctrl+B          Toggle file tree\n" +
+                "  F4              Toggle find results panel\n" +
                 "  Alt+Z           Toggle word wrap\n";
 
             void DoKeyboardShortcuts()
@@ -647,17 +804,21 @@ public static class AppBootstrap
                         else
                             searchBar.NavigatePrev();
                     }),
-                    new MenuItem("_Replace",        "Ctrl+H",   () => searchBar.Open(SearchBarView.Mode.Replace)),
+                    new MenuItem("_Replace",             "Ctrl+H",       () => searchBar.Open(SearchBarView.Mode.Replace)),
+                    null!,
+                    new MenuItem("Find in _Files",       "Ctrl+Alt+F", DoFindInFiles),
+                    new MenuItem("Replace in Files",     "",             null) { Enabled = false },
                 ]),
                 new MenuBarItem("_View",
                 [
                     fileTreeItem,
+                    findResultsItem,
                     tabBarItem,
                     wrapItem,
                     null!,
                     new MenuItem("Edit _Theme…", "", () =>
                     {
-                        var dlg = new ThemeEditorDialog(themeSvc, themeRegistry, settingsSvc);
+                        var dlg = new ThemeEditorDialog(themeSvc, themeRegistry, settingsSvc, app);
                         app.Run(dlg);
                     }),
                 ]),
@@ -675,14 +836,14 @@ public static class AppBootstrap
             tabBar.Width  = Dim.Fill();
             tabBar.Height = Dim.Absolute(1);
 
-            fileTree.X      = 0;
-            fileTree.Y      = Pos.Bottom(tabBar);
-            fileTree.Width  = Dim.Absolute(TreeWidth);
-            fileTree.Height = Dim.Fill() - Dim.Absolute(1);
+            sidebar.X      = 0;
+            sidebar.Y      = Pos.Bottom(tabBar);
+            sidebar.Width  = Dim.Absolute(TreeWidth);
+            sidebar.Height = Dim.Fill() - Dim.Absolute(1);  // always full height; panel is independent
 
             editorView.X      = Pos.Absolute(TreeWidth);
             editorView.Y      = Pos.Bottom(tabBar);
-            editorView.Width  = Dim.Fill();   // Fill from X, which already accounts for tree width
+            editorView.Width  = Dim.Fill();
             editorView.Height = Dim.Fill() - Dim.Absolute(1);
 
             searchBar.X      = 0;
@@ -695,15 +856,21 @@ public static class AppBootstrap
             statusBar.Width  = Dim.Fill();
             statusBar.Height = Dim.Absolute(1);
 
-            using var window = new Window { Title = "code-edit" };
-            window.Add(menuBar, tabBar, fileTree, editorView, searchBar, statusBar);
+            resultsPanel.X       = Pos.Absolute(0);
+            resultsPanel.Y       = Pos.AnchorEnd(1 + resultsPanelHeight);
+            resultsPanel.Width   = Dim.Fill();
+            resultsPanel.Height  = Dim.Absolute(resultsPanelHeight);
+            resultsPanel.Visible = false;
 
-            // Auto-hide file tree when terminal is too narrow
+            using var window = new Window { Title = "code-edit" };
+            window.Add(menuBar, tabBar, sidebar, editorView, searchBar, resultsPanel, statusBar);
+
+            // Auto-hide sidebar when terminal is too narrow
             window.FrameChanged += (_, _) =>
             {
-                var shouldShow = treeUserVisible && window.Viewport.Width >= TreeWidth + MinEditorWidth;
-                if (shouldShow != fileTree.Visible)
-                    SetTreeVisible(shouldShow);
+                var shouldShow = sidebarUserVisible && window.Viewport.Width >= TreeWidth + MinEditorWidth;
+                if (shouldShow != sidebar.Visible)
+                    SetSidebarVisible(shouldShow);
             };
 
             editorView.SetFocus();

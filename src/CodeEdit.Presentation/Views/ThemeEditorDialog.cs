@@ -1,16 +1,15 @@
 using CodeEdit.Application;
 using CodeEdit.Application.Ports;
-using Terminal.Gui.Input;
-using TAttr = Terminal.Gui.Drawing.Attribute;
 using CodeEdit.Domain;
 using CodeEdit.Infrastructure.Settings;
 using CodeEdit.Infrastructure.Theme;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Drivers;
+using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
-using TGuiApp = Terminal.Gui.App.Application;
+using TAttr = Terminal.Gui.Drawing.Attribute;
 
 namespace CodeEdit.Presentation.Views;
 
@@ -19,6 +18,7 @@ public sealed class ThemeEditorDialog : Dialog
     private readonly ThemeService    _themeSvc;
     private readonly ThemeRegistry   _registry;
     private readonly SettingsService _settingsSvc;
+    private readonly IApplication    _app;
 
     private readonly List<UserTheme> _themes;
     private readonly string          _originalActiveName;
@@ -45,11 +45,12 @@ public sealed class ThemeEditorDialog : Dialog
     private readonly List<RoleDef> _roles;
     private bool _suppressRgbChange;
 
-    public ThemeEditorDialog(ThemeService themeSvc, ThemeRegistry registry, SettingsService settingsSvc)
+    public ThemeEditorDialog(ThemeService themeSvc, ThemeRegistry registry, SettingsService settingsSvc, IApplication app)
     {
         _themeSvc    = themeSvc;
         _registry    = registry;
         _settingsSvc = settingsSvc;
+        _app         = app;
 
         Title  = "Theme Editor";
         Width  = 80;
@@ -410,7 +411,7 @@ public sealed class ThemeEditorDialog : Dialog
     internal void DoDelete()
     {
         if (IsBuiltIn(_working)) return;
-        var choice = MessageBox.Query(TGuiApp.Instance!, "Delete Theme",
+        var choice = MessageBox.Query(_app, "Delete Theme",
             $"Delete '{_working.Name}'? This cannot be undone.", "Delete", "Cancel");
         if (choice != 0) return;
 
@@ -427,7 +428,7 @@ public sealed class ThemeEditorDialog : Dialog
     internal void DoImport()
     {
         var dlg = new OpenDialog { MustExist = true, OpenMode = OpenMode.File };
-        TGuiApp.Instance!.Run(dlg);
+        _app.Run(dlg);
         if (dlg.Canceled || dlg.FilePaths.Count == 0) return;
 
         var path = dlg.FilePaths[0].ToString()!;
@@ -474,7 +475,7 @@ public sealed class ThemeEditorDialog : Dialog
     internal void DoExport()
     {
         var dlg = new SaveDialog();
-        TGuiApp.Instance!.Run(dlg);
+        _app.Run(dlg);
         if (dlg.FileName is null) return;
         try { _themeSvc.Export(_working, dlg.FileName.ToString()!); }
         catch (Exception ex) { ShowError(ex.Message); }
@@ -496,7 +497,7 @@ public sealed class ThemeEditorDialog : Dialog
             // Live preview keeps the registry pointing at _working, so saving always makes
             // the current working theme the persisted active theme.
             _settingsSvc.SaveActiveTheme(_working.Name);
-            TGuiApp.Instance!.RequestStop(this);
+            _app.RequestStop(this);
         }
         catch (Exception ex) { ShowError(ex.Message); }
     }
@@ -506,7 +507,7 @@ public sealed class ThemeEditorDialog : Dialog
         var original = _themes.FirstOrDefault(t =>
             string.Equals(t.Name, _originalActiveName, StringComparison.OrdinalIgnoreCase));
         _registry.SetTheme(original as IColorTheme ?? new DefaultDarkTheme());
-        TGuiApp.Instance!.RequestStop(this);
+        _app.RequestStop(this);
     }
 
     // ── Name prompt ───────────────────────────────────────────────────────
@@ -531,15 +532,15 @@ public sealed class ThemeEditorDialog : Dialog
                     string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase)))
             { errLabel.Text = $"'{name}' already exists."; return; }
             result = name;
-            TGuiApp.Instance!.RequestStop(dlg);
+            _app.RequestStop(dlg);
         };
-        btnCx.Accepting += (_, _) => TGuiApp.Instance!.RequestStop(dlg);
+        btnCx.Accepting += (_, _) => _app.RequestStop(dlg);
 
         dlg.Add(errLabel, nameField, btnOk, btnCx);
-        TGuiApp.Instance!.Run(dlg);
+        _app.Run(dlg);
         return result;
     }
 
-    private static void ShowError(string message)
-        => MessageBox.Query(TGuiApp.Instance!, "Error", message, "OK");
+    private void ShowError(string message)
+        => MessageBox.Query(_app, "Error", message, "OK");
 }

@@ -65,6 +65,8 @@ public sealed class EditorView : View
     public event EventHandler? PrevTabRequested;
     public event EventHandler? CloseTabRequested;
     public event EventHandler? FileTreeToggleRequested;
+    public event EventHandler? FindInFilesRequested;
+    public event EventHandler? FindResultsPanelToggleRequested;
 
     public EditorView(
         IEventBus         eventBus,
@@ -406,6 +408,18 @@ public sealed class EditorView : View
         if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.B))
         {
             FileTreeToggleRequested?.Invoke(this, EventArgs.Empty);
+            key.Handled = true;
+            return true;
+        }
+        if (key.KeyCode == (KeyCode.CtrlMask | KeyCode.AltMask | KeyCode.F))
+        {
+            FindInFilesRequested?.Invoke(this, EventArgs.Empty);
+            key.Handled = true;
+            return true;
+        }
+        if (key.KeyCode == KeyCode.F4)
+        {
+            FindResultsPanelToggleRequested?.Invoke(this, EventArgs.Empty);
             key.Handled = true;
             return true;
         }
