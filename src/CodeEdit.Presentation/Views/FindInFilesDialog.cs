@@ -7,7 +7,7 @@ namespace CodeEdit.Presentation.Views;
 
 public sealed class FindInFilesDialog : Dialog
 {
-    public bool               Canceled { get; private set; } = true;
+    public new bool           Canceled { get; private set; } = true;
     public string             Query    { get; private set; } = "";
     public FindInFilesOptions Options  { get; private set; } = new();
 

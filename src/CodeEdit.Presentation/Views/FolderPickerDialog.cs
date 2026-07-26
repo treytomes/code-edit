@@ -22,7 +22,7 @@ public sealed class FolderPickerDialog : Dialog
     private readonly DirectoryListView _listView;
     private readonly ErrorLabel        _errorView;
 
-    public bool   Canceled     { get; private set; } = true;
+    public new bool Canceled   { get; private set; } = true;
     public string SelectedPath { get; private set; } = "";
 
     public FolderPickerDialog(IApplication app, IColorTheme theme, string initialPath)
@@ -67,13 +67,13 @@ public sealed class FolderPickerDialog : Dialog
         var btnCancel = new Button
         {
             Text = "Cancel",
-            X    = Pos.AnchorEnd(26),
+            X    = Pos.AnchorEnd(29),
             Y    = Pos.AnchorEnd(1),
         };
         var btnAccept = new Button
         {
             Text      = "Select Folder",
-            X         = Pos.AnchorEnd(17),
+            X         = Pos.AnchorEnd(18),
             Y         = Pos.AnchorEnd(1),
             IsDefault = true,
         };
@@ -271,6 +271,19 @@ public sealed class FolderPickerDialog : Dialog
 
         protected override bool OnMouseEvent(Mouse mouseEvent)
         {
+            if (mouseEvent.Flags.HasFlag(MouseFlags.WheeledUp))
+            {
+                MoveSelection(-1);
+                mouseEvent.Handled = true;
+                return true;
+            }
+            if (mouseEvent.Flags.HasFlag(MouseFlags.WheeledDown))
+            {
+                MoveSelection(1);
+                mouseEvent.Handled = true;
+                return true;
+            }
+
             if (!mouseEvent.Position.HasValue) return base.OnMouseEvent(mouseEvent);
             var row = mouseEvent.Position.Value.Y;
             var idx = _scrollTop + row;

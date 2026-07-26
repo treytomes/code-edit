@@ -257,10 +257,19 @@ public static class AppBootstrap
 
             // ── File helpers ───────────────────────────────────────────────
 
+            // Returns true when the only open tab is an untitled, unedited placeholder.
+            bool IsSolePhantomTab() =>
+                eventBus.Buffers.Tabs.Count == 1 &&
+                eventBus.Buffers.Tabs[0].Buffer.FilePath is null &&
+                !eventBus.Buffers.Tabs[0].Buffer.IsDirty;
+
             void SetActiveBuffer(IMutableTextBuffer newBuf)
             {
+                var phantom = IsSolePhantomTab() ? 0 : (int?)null;
                 eventBus.Buffers.Add(newBuf);
                 editorView.SetBuffer(newBuf);
+                if (phantom is not null)
+                    eventBus.Buffers.Close(phantom.Value);
             }
 
             void DoNew()
@@ -322,6 +331,28 @@ public static class AppBootstrap
                     if (dlg.Canceled) return;
                     folderPath = dlg.SelectedPath;
                 }
+
+                // Close all open tabs, prompting for any unsaved changes
+                var tabs = eventBus.Buffers.Tabs;
+                for (var i = tabs.Count - 1; i >= 0; i--)
+                {
+                    var buf  = tabs[i].Buffer;
+                    if (buf.IsDirty)
+                    {
+                        var name   = buf.FilePath is null ? "Untitled" : Path.GetFileName(buf.FilePath);
+                        var choice = MessageBox.Query(app, "Unsaved Changes",
+                            $"{name} has unsaved changes. Close anyway?", "Yes", "No");
+                        if (choice != 0) return;
+                    }
+                }
+                // Close all tabs down to one blank buffer
+                while (eventBus.Buffers.Tabs.Count > 1)
+                    eventBus.Buffers.Close(0);
+                var blank = new EmptyBuffer();
+                eventBus.Buffers.Add(blank);
+                eventBus.Buffers.Close(0);
+                editorView.SetBuffer(blank);
+                RefreshTabBar();
 
                 rootDir = folderPath;
                 fileTree.Populate(folderPath);
@@ -584,7 +615,10 @@ public static class AppBootstrap
                     {
                         var buf = (IMutableTextBuffer)fileService.Open(filePath);
                         recentFiles.Add(filePath, RecentKind.File);
+                        var phantom = IsSolePhantomTab() ? 0 : (int?)null;
                         eventBus.Buffers.Add(buf);
+                        if (phantom is not null)
+                            eventBus.Buffers.Close(phantom.Value);
                     }
                     catch (FileServiceException ex) { statusBar.SetMessage(ex.Message); return; }
                 }
