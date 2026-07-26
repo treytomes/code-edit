@@ -23,3 +23,9 @@ Thumbs.db
 # Runtime logs
 logs/
 *.log
+
+# Install output
+publish/
+
+# Runtime data directory
+.code-edit/
