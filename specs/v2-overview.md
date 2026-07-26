@@ -1,7 +1,7 @@
 # v2 Overview
 
 ## Status
-In Progress
+Implemented
 
 ## Features
 - File tree panel (toggleable, left-side)
