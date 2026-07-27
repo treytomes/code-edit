@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="${HOME}/.local/bin"
 BINARY_NAME="ce"
 PROJECT="${SCRIPT_DIR}/src/CodeEdit.Presentation"
-PUBLISH_DIR="${SCRIPT_DIR}/publish"
+PUBLISH_DIR="${SCRIPT_DIR}/publish/linux-x64"
 
 echo "Building ${BINARY_NAME}…"
 dotnet publish "${PROJECT}" \

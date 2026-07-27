@@ -366,6 +366,7 @@ public static class AppBootstrap
                 fileTree.Populate(folderPath);
                 recentFiles.Add(folderPath, RecentKind.Folder);
                 SaveSession();
+                editorView.SetFocus();
             }
 
             void DoSave()
