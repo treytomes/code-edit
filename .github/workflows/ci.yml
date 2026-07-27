@@ -103,6 +103,14 @@ jobs:
         with:
           path: dist/
 
+      - name: Checkout install scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            install.ps1
+            install.bat
+          sparse-checkout-cone-mode: false
+
       - name: Package artifacts
         run: |
           cd dist
@@ -110,6 +118,8 @@ jobs:
             dir="code-edit-${rid}"
             if [ -d "$dir" ]; then
               if [[ "$rid" == win* ]]; then
+                cp ../install.ps1 "$dir/"
+                cp ../install.bat "$dir/"
                 zip -j "code-edit-${rid}.zip" "$dir"/*
               else
                 tar -czf "code-edit-${rid}.tar.gz" -C "$dir" .
