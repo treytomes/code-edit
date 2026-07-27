@@ -2,9 +2,17 @@
 setlocal EnableDelayedExpansion
 
 set BINARY_NAME=ce
+set INSTALL_DIR=%LOCALAPPDATA%\Programs\code-edit
+
+:: When run from an extracted release zip the pre-built binary sits alongside
+:: this script. When run from the repo root, build it first.
+if exist "%~dp0CodeEdit.Presentation.exe" (
+    set SOURCE_EXE=%~dp0CodeEdit.Presentation.exe
+    goto :install
+)
+
 set PROJECT=%~dp0src\CodeEdit.Presentation
 set PUBLISH_DIR=%~dp0publish\win-x64
-set INSTALL_DIR=%LOCALAPPDATA%\Programs\code-edit
 
 echo Building %BINARY_NAME%...
 dotnet publish "%PROJECT%" ^
@@ -19,9 +27,11 @@ if errorlevel 1 (
     echo dotnet publish failed.
     exit /b 1
 )
+set SOURCE_EXE=%PUBLISH_DIR%\CodeEdit.Presentation.exe
 
+:install
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
-copy /y "%PUBLISH_DIR%\CodeEdit.Presentation.exe" "%INSTALL_DIR%\%BINARY_NAME%.exe"
+copy /y "%SOURCE_EXE%" "%INSTALL_DIR%\%BINARY_NAME%.exe"
 
 :: Add INSTALL_DIR to user PATH if not already present
 set "KEY=HKCU\Environment"
